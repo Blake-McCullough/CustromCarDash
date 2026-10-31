@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Impreza CAN Dash</title>
+<style>
+  :root{
+    --bg:#07080a; --panel:#0e1013; --line:#23262c; --dim:#6b7079; --fg:#e9ecf1;
+    --red:#ff2d4a; --redglow:rgba(255,45,74,.55); --amber:#ffb020; --green:#3ddc84;
+    --mono: ui-monospace, "SF Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--fg);font-family:var(--mono);overflow:hidden;
+    -webkit-user-select:none;user-select:none;cursor:default}
+  body{display:flex;flex-direction:column;padding:1.2vh 1.2vw;gap:1vh}
+
+  header{display:flex;align-items:center;gap:1.4vw;border-bottom:1px solid var(--line);padding-bottom:.8vh;font-size:1.6vh;letter-spacing:.12em}
+  header .brand{font-weight:800;font-size:2.4vh;letter-spacing:.18em}
+  header .brand b{color:var(--red);text-shadow:0 0 8px var(--redglow)}
+  header .stat{color:var(--dim)}
+  header .stat em{color:var(--fg);font-style:normal}
+  header .spacer{flex:1}
+  .pill{padding:.3vh .8vw;border:1px solid var(--line);border-radius:3px}
+  .pill.live{color:var(--green);border-color:var(--green)}
+  .pill.demo{color:var(--amber);border-color:var(--amber)}
+  .pill.off{color:var(--red);border-color:var(--red)}
+  #clock{font-size:2.2vh;font-weight:700}
+
+  main{flex:1;min-height:0;position:relative}
+  .view{position:absolute;inset:0;display:none}
+  .view.on{display:grid}
+
+  /* DASH */
+  #dash{grid-template-columns:34% 1fr;grid-template-rows:auto 1fr;gap:1vh 1vw}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1.2vh 1vw;position:relative;min-height:0}
+  .label{font-size:1.4vh;color:var(--dim);letter-spacing:.16em;text-transform:uppercase;display:flex;gap:.6vw;align-items:center}
+  .unv{font-size:1.1vh;color:var(--amber);border:1px solid var(--amber);padding:0 .3vw;border-radius:2px;letter-spacing:.05em}
+  .big{display:grid;grid-template-columns:1fr auto;gap:1vw;grid-column:1;grid-row:1}
+  .speedv{font-size:12vh;font-weight:800;line-height:1;letter-spacing:-.04em}
+  .speedu{color:var(--dim);font-size:1.6vh}
+  .gearbox{border:2px solid var(--fg);border-radius:4px;min-width:10vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:.6vh .8vw}
+  .gearv{font-size:10vh;font-weight:900;line-height:1}
+  .rows{grid-column:1;grid-row:2;display:flex;flex-direction:column;gap:1vh}
+  .row{display:grid;grid-template-columns:30% 1fr auto;align-items:center;gap:1vw}
+  .row .v{font-size:3.4vh;font-weight:800;min-width:9ch;text-align:right}
+  .bar{height:1.4vh;background:#16191d;border:1px solid var(--line);position:relative;overflow:hidden}
+  .bar>i{position:absolute;left:0;top:0;bottom:0;background:var(--fg);width:0}
+  .bar.center>i{left:50%}
+  #brbar{background:var(--red)}
+  .flags{display:flex;gap:.8vw;align-items:center;margin-top:auto;font-size:1.5vh;letter-spacing:.14em}
+  .flag{border:1px solid var(--line);color:#3a3f47;padding:.6vh .8vw;border-radius:3px}
+  .flag.on{color:var(--bg);background:var(--amber);border-color:var(--amber)}
+  .amb{margin-left:auto;color:var(--dim)} .amb b{color:var(--fg)}
+
+  .rpmcard{grid-column:2;grid-row:1;display:flex;flex-direction:column;gap:.8vh}
+  .rpmtop{display:flex;justify-content:space-between;align-items:baseline}
+  .rpmv{font-size:7vh;font-weight:800;line-height:1}
+  .segs{display:grid;grid-template-columns:repeat(40,1fr);gap:.25vw;height:4.5vh}
+  .segs i{background:#191c21;border-radius:1px;transition:background .05s}
+  .segs i.on{background:var(--fg)}
+  .segs i.on.warn{background:var(--amber)}
+  .segs i.on.red{background:var(--red);box-shadow:0 0 8px var(--redglow)}
+  .segs.flash i.on{animation:fl .12s steps(2) infinite}
+  @keyframes fl{50%{background:#191c21;box-shadow:none}}
+
+  .graphcard{grid-column:2;grid-row:2;display:flex;flex-direction:column}
+  canvas{flex:1;width:100%;min-height:0}
+
+  /* BUS */
+  #bus{grid-template-rows:auto 1fr;gap:1vh}
+  #bus .hint{font-size:1.4vh;color:var(--dim)}
+  #bus .tbl{overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:4px}
+  table{width:100%;border-collapse:collapse;font-size:2vh}
+  th,td{padding:.45vh .8vw;text-align:left;border-bottom:1px solid #15181c;white-space:nowrap}
+  th{position:sticky;top:0;background:var(--panel);color:var(--dim);font-weight:400;letter-spacing:.14em;font-size:1.4vh}
+  td.id{font-weight:800}
+  td.hz{color:var(--dim);text-align:right;width:8ch}
+  td.sig{color:var(--amber);font-size:1.5vh}
+  .byte{display:inline-block;width:3.2ch;text-align:center;transition:color .4s,background .4s}
+  .byte.hot{color:#fff;background:var(--red);box-shadow:0 0 6px var(--redglow);transition:none}
+  .byte.warm{color:var(--red)}
+
+  nav{display:flex;gap:.6vw}
+  nav button{font:inherit;font-size:1.6vh;letter-spacing:.16em;color:var(--dim);background:var(--panel);border:1px solid var(--line);
+    padding:1vh 2vw;border-radius:3px;cursor:pointer}
+  nav button.on{color:var(--bg);background:var(--fg);border-color:var(--fg)}
+
+  /* powered off overlay */
+  #off{position:fixed;inset:0;background:rgba(7,8,10,.94);display:none;flex-direction:column;align-items:center;justify-content:center;gap:2vh;z-index:9}
+  #off.show{display:flex}
+  #off h1{font-size:7vh;letter-spacing:.12em;text-shadow:0 0 18px rgba(255,255,255,.25)}
+  #off .sub{color:var(--dim);letter-spacing:.2em;font-size:1.8vh}
+  #off .trip{display:flex;gap:1vw;margin-top:1vh}
+  #off .trip div{border:1px solid var(--line);padding:1vh 1.4vw;font-size:3vh;font-weight:800}
+  #off .trip small{display:block;color:var(--dim);font-size:1.2vh;font-weight:400;letter-spacing:.16em}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">IMPREZA <b>//</b> CAN DASH</div>
+  <div class="stat"><em id="fps">0</em> FRAMES/S</div>
+  <div class="stat"><em id="nids">0</em> IDS</div>
+  <span id="src" class="pill">…</span>
+  <div class="spacer"></div>
+  <div id="clock">--:--</div>
+</header>
+
+<main>
+  <section id="dash" class="view on">
+    <div class="card big">
+      <div>
+        <div class="label">Speed <span class="unv" data-u="speed">?</span></div>
+        <div class="speedv" id="speed">0</div>
+        <div class="speedu">KM/H</div>
+      </div>
+      <div class="gearbox">
+        <div class="label">Gear <span class="unv" data-u="gear">raw</span></div>
+        <div class="gearv" id="gear">N</div>
+      </div>
+    </div>
+
+    <div class="card rows">
+      <div class="row"><div class="label">Throttle <span class="unv" data-u="throttle">?</span></div><div class="bar"><i id="thrbar"></i></div><div class="v" id="thr">0%</div></div>
+      <div class="row"><div class="label">Coolant <span class="unv" data-u="coolant">?</span></div><div class="bar"><i id="clbar"></i></div><div class="v" id="cool">--°C</div></div>
+      <div class="row"><div class="label">Brake <span class="unv" data-u="brake">?</span></div><div class="bar"><i id="brbar"></i></div><div class="v" id="brk">0%</div></div>
+      <div class="row"><div class="label">Steer <span class="unv" data-u="steering">?</span></div><div class="bar center"><i id="stbar"></i></div><div class="v" id="steer">0°</div></div>
+      <div class="flags">
+        <span class="flag" id="fclutch">CLUTCH</span>
+        <span class="flag" id="fhand">HANDBRAKE</span>
+        <span class="amb">OUTSIDE <b id="amb">--</b>°C</span>
+      </div>
+    </div>
+
+    <div class="card rpmcard">
+      <div class="rpmtop">
+        <div class="label">RPM <span class="unv" data-u="rpm">?</span></div>
+        <div class="rpmv" id="rpm">0</div>
+      </div>
+      <div class="segs" id="segs"></div>
+    </div>
+
+    <div class="card graphcard">
+      <div class="label">RPM · last 10 s</div>
+      <canvas id="graph"></canvas>
+    </div>
+  </section>
+
+  <section id="bus" class="view">
+    <div class="hint">Every ID on the bus. Bytes flash red when they change: do one thing in the car (rev, press clutch, turn wheel) and watch which byte reacts. Then put it in signals.json.</div>
+    <div class="tbl"><table><thead><tr><th>ID</th><th>HZ</th><th>DATA</th><th>DECODED AS</th></tr></thead><tbody id="rows"></tbody></table></div>
+  </section>
+</main>
+
+<nav>
+  <button data-v="dash" class="on">DASH</button>
+  <button data-v="bus">BUS</button>
+</nav>
+
+<div id="off">
+  <div class="sub">CAN LINK LOST <span id="losttime"></span></div>
+  <h1>VEHICLE POWERED OFF</h1>
+  <div class="trip">
+    <div><small>THIS DRIVE</small><span id="tripkm">0.0</span> KM</div>
+    <div><small>DRIVE TIME</small><span id="tripmin">0</span> MIN</div>
+    <div><small>TOP SPEED</small><span id="topspd">0</span> KM/H</div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const REDLINE = 6500, SHIFT_AT = 6000, SEGS = 40, MAXR = 7000;
+
+// rpm segments
+const segEls = [];
+for (let i = 0; i < SEGS; i++) { const s = document.createElement('i'); $('segs').appendChild(s); segEls.push(s); }
+
+// tabs
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === b.dataset.v));
+});
+
+// clock
+setInterval(() => { const d = new Date(); $('clock').textContent = d.toTimeString().slice(0, 5); }, 1000);
+
+// trip stats
+const trip = { km: 0, start: null, top: 0, lastT: null, wasLinked: false };
+
+// rpm history graph
+const hist = [];
+const cv = $('graph'), cx = cv.getContext('2d');
+function drawGraph() {
+  const w = cv.width = cv.clientWidth * devicePixelRatio, h = cv.height = cv.clientHeight * devicePixelRatio;
+  cx.clearRect(0, 0, w, h);
+  cx.strokeStyle = '#1d2025'; cx.lineWidth = 1; cx.fillStyle = '#6b7079';
+  cx.font = `${11 * devicePixelRatio}px ui-monospace, monospace`;
+  for (let r = 0; r <= MAXR; r += 1000) {
+    const y = h - (r / MAXR) * h; cx.beginPath(); cx.moveTo(0, y); cx.lineTo(w, y); cx.stroke();
+    if (r) cx.fillText(r / 1000 + 'K', 4, y + 12 * devicePixelRatio);
+  }
+  const yR = h - (REDLINE / MAXR) * h;
+  cx.fillStyle = 'rgba(255,45,74,.08)'; cx.fillRect(0, 0, w, yR);
+  if (hist.length < 2) return;
+  const now = performance.now(), span = 10000;
+  cx.beginPath();
+  hist.forEach((p, i) => {
+    const x = w - ((now - p[0]) / span) * w, y = h - (Math.min(p[1], MAXR) / MAXR) * h;
+    i ? cx.lineTo(x, y) : cx.moveTo(x, y);
+  });
+  cx.strokeStyle = '#ff2d4a'; cx.lineWidth = 2.5 * devicePixelRatio;
+  cx.shadowColor = 'rgba(255,45,74,.7)'; cx.shadowBlur = 10 * devicePixelRatio; cx.stroke(); cx.shadowBlur = 0;
+}
+
+function setBar(el, frac) { el.style.width = (Math.max(0, Math.min(1, frac)) * 100) + '%'; }
+function fmt(v, d = 0) { return v == null ? '--' : Number(v).toFixed(d); }
+
+function render(s) {
+  const v = s.signals, m = s.meta;
+  $('fps').textContent = s.fps.toLocaleString();
+  $('nids').textContent = s.ids.length;
+  const src = $('src');
+  src.className = 'pill ' + (!s.link ? 'off' : s.source === 'demo' ? 'demo' : 'live');
+  src.textContent = !s.link ? 'NO LINK' : s.source === 'demo' ? 'DEMO' : 'LIVE CAN';
+
+  // verified badges
+  document.querySelectorAll('[data-u]').forEach(e => { const k = e.dataset.u; e.style.display = m[k] && m[k].verified ? 'none' : ''; });
+
+  const rpm = v.rpm ?? v.rpm_alt ?? 0;
+  $('rpm').textContent = Math.round(rpm).toLocaleString();
+  const lit = Math.round((rpm / MAXR) * SEGS);
+  segEls.forEach((e, i) => {
+    const r = (i / SEGS) * MAXR;
+    e.className = i < lit ? ('on' + (r >= REDLINE - 500 ? ' red' : r >= 4500 ? ' warn' : '')) : '';
+  });
+  $('segs').classList.toggle('flash', rpm >= SHIFT_AT);
+
+  $('speed').textContent = fmt(v.speed);
+  $('gear').textContent = v.gear == null ? '-' : (v.gear === 0 ? 'N' : v.gear);
+  $('thr').textContent = fmt(v.throttle) + '%'; setBar($('thrbar'), (v.throttle ?? 0) / 100);
+  $('cool').textContent = fmt(v.coolant) + '°C'; setBar($('clbar'), ((v.coolant ?? 0) - 40) / 80);
+  $('clbar').style.background = (v.coolant ?? 0) > 105 ? 'var(--red)' : 'var(--fg)';
+  $('brk').textContent = fmt(v.brake) + '%'; setBar($('brbar'), (v.brake ?? 0) / 100);
+  $('fclutch').classList.toggle('on', v.clutch === 1);
+  $('fhand').classList.toggle('on', v.handbrake === 1);
+  $('amb').textContent = fmt(v.ambient);
+  const st = v.steering ?? 0;
+  $('steer').textContent = fmt(Math.abs(st)) + '°' + (st > 0.5 ? 'L' : st < -0.5 ? 'R' : '');
+  const sb = $('stbar'), frac = Math.min(Math.abs(st) / 540, 1) * 50;
+  sb.style.width = frac + '%'; sb.style.left = st >= 0 ? (50 - frac) + '%' : '50%';
+
+  const t = performance.now();
+  hist.push([t, rpm]); while (hist.length && t - hist[0][0] > 10500) hist.shift();
+
+  // trip
+  if (s.link) {
+    if (!trip.start) trip.start = t;
+    if (trip.lastT && v.speed != null) trip.km += v.speed * ((t - trip.lastT) / 3600000);
+    trip.lastT = t; trip.top = Math.max(trip.top, v.speed ?? 0);
+  }
+  if (trip.wasLinked && !s.link) $('losttime').textContent = 'AT ' + new Date().toTimeString().slice(0, 5);
+  trip.wasLinked = s.link;
+  $('off').classList.toggle('show', !s.link && trip.start !== null);
+  $('tripkm').textContent = trip.km.toFixed(1);
+  $('tripmin').textContent = trip.start ? Math.round((t - trip.start) / 60000) : 0;
+  $('topspd').textContent = Math.round(trip.top);
+
+  if (document.getElementById('bus').classList.contains('on')) renderBus(s);
+}
+
+const sigsById = {};
+function renderBus(s) {
+  for (const k in sigsById) delete sigsById[k];
+  for (const [k, mm] of Object.entries(s.meta)) {
+    const id = parseInt(mm.id).toString(16).toUpperCase().padStart(3, '0');
+    (sigsById[id] = sigsById[id] || []).push(k);
+  }
+  let html = '';
+  for (const [id, data, hz, ages] of s.ids) {
+    const bytes = data.split(' ').map((b, i) => {
+      const a = ages[i]; const c = a < 250 ? 'hot' : a < 1500 ? 'warm' : '';
+      return `<span class="byte ${c}">${b}</span>`;
+    }).join('');
+    html += `<tr><td class="id">${id}</td><td class="hz">${hz}</td><td>${bytes}</td><td class="sig">${(sigsById[id] || []).join(', ')}</td></tr>`;
+  }
+  $('rows').innerHTML = html;
+}
+
+function loop() { drawGraph(); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+
+let latest = null;
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = e => { latest = JSON.parse(e.data); render(latest); };
+  ws.onclose = () => setTimeout(connect, 1000);
+}
+connect();
+</script>
+</body>
+</html>
