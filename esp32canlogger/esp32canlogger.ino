@@ -100,15 +100,37 @@ static void stopTwai() {
   twai_driver_uninstall();
 }
 
+// ---- Diagnostics shown on the phone page while searching ----
+static char diagMsg[160] = "starting";
+
+// Watch the raw RX pin (CAN driver not running) and count level changes.
+// A live CAN bus gives hundreds+ edges per 100 ms; an idle/disconnected line gives 0.
+static void sampleRxPin(uint32_t ms, uint32_t &edges, int &idleLevel) {
+  pinMode((int)CAN_RX_PIN, INPUT);
+  int last = digitalRead((int)CAN_RX_PIN), highs = 0, samples = 0;
+  edges = 0;
+  uint32_t t0 = millis();
+  while (millis() - t0 < ms) {
+    int v = digitalRead((int)CAN_RX_PIN);
+    if (v != last) { edges++; last = v; }
+    highs += v; samples++;
+  }
+  idleLevel = (highs * 2 > samples) ? 1 : 0;
+}
+
 // Try each speed for 1.5 s; the right one gives clean frames, wrong ones give errors.
 static uint32_t detectBitrate() {
   static const uint32_t RATES[] = {500000, 250000, 125000, 1000000};
   for (;;) {
+    uint32_t edges; int lvl;
+    sampleRxPin(200, edges, lvl);
+
     if (forcedBitrate) {
       if (startTwai(forcedBitrate)) return forcedBitrate;
       vTaskDelay(pdMS_TO_TICKS(500));
       continue;
     }
+    String results;
     for (uint32_t r : RATES) {
       if (forcedBitrate) break;
       if (!startTwai(r)) continue;
@@ -119,9 +141,23 @@ static uint32_t detectBitrate() {
       }
       twai_status_info_t s;
       twai_get_status_info(&s);
+      Serial.printf("  try %4luk: frames=%lu bus_errors=%lu\n", (unsigned long)(r / 1000),
+                    (unsigned long)good, (unsigned long)s.bus_error_count);
+      results += String(r / 1000) + "k:" + good + "f/" + s.bus_error_count + "e ";
       if (good >= 20 && s.bus_error_count < good / 4 + 5) return r;
       stopTwai();
     }
+
+    const char *verdict;
+    if (edges == 0 && lvl == 1)
+      verdict = "RX pin idle HIGH: no CAN traffic reaching the board (wiring/pins, or OBD port is silent)";
+    else if (edges == 0 && lvl == 0)
+      verdict = "RX pin stuck LOW: CANH/CANL swapped, CAN board unpowered, or RX on wrong pin";
+    else
+      verdict = "signal on RX pin but no valid frames: check CANH/CANL swap and GND to OBD pin 5";
+    snprintf(diagMsg, sizeof(diagMsg), "rx edges/200ms=%lu idle=%s | %s| %s",
+             (unsigned long)edges, lvl ? "HIGH" : "LOW", results.c_str(), verdict);
+    Serial.printf("DIAG: %s\n", diagMsg);
   }
 }
 
@@ -299,7 +335,8 @@ input[type=checkbox]{flex:0 0 auto;min-width:0;width:22px;height:22px;padding:0;
 </style></head><body>
 <header><h1>CAN <b>//</b> LOGGER</h1>
 <div class="st"><span>BUS <em id="br">searching…</em></span><span><em id="fps">0</em> f/s</span><span><em id="nid">0</em> IDs</span>
-<span>MISSED <em id="miss">0</em></span><span>FREE <em id="free">-</em></span></div></header>
+<span>MISSED <em id="miss">0</em></span><span>FREE <em id="free">-</em></span></div>
+<div id="diag" class="warn" style="font-size:12px;margin-top:6px;display:none"></div></header>
 
 <div class="card">
  <div class="row">
@@ -335,6 +372,7 @@ async function live(){
  try{const s=await (await fetch('/api/live')).json();
   $('br').textContent=s.br?(s.br/1000)+' kbit/s':'searching… (ignition on?)';
   $('br').className=s.br?'ok':'warn';
+  $('diag').style.display=s.diag?'block':'none';$('diag').textContent=s.diag?'DIAG: '+s.diag:'';
   $('fps').textContent=s.fps;$('nid').textContent=s.ids.length;$('miss').textContent=s.missed;$('free').textContent=kb(s.free);
   rec=s.rec;$('rec').textContent=rec?'■ STOP':'● RECORD';$('rec').classList.toggle('on',rec);
   $('recinfo').innerHTML=rec?`Recording <b>${s.file.slice(1)}</b> · ${(s.recms/1000).toFixed(0)} s · ${kb(s.bytes)} · ${s.marks} markers`:
@@ -396,6 +434,7 @@ static void handleLive() {
   o += ",\"bytes\":"; o += recBytes;
   o += ",\"recms\":"; o += recOn ? (now - recStart) : 0;
   o += ",\"marks\":"; o += markCount;
+  o += ",\"diag\":\""; o += bitrate ? "" : diagMsg; o += "\"";
   o += ",\"ids\":[";
   char buf[96];
   for (int i = 0; i < n; i++) {
