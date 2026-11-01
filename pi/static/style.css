@@ -153,3 +153,7 @@ nav button.on { color: var(--bg); background: var(--fg); border-color: var(--fg)
 .tgrid2 button i { width: calc(var(--u) * 5); height: calc(var(--u) * 5); border-radius: 50%; display: block; }
 .tgrid2 button.on { border-color: var(--fg); }
 .tbox .dim { margin-top: calc(var(--u) * 1.8); display: block; }
+
+/* mouse cursor: hidden for the touch screen, shown with --cursor or ?cursor */
+html.showcursor, html.showcursor * { cursor: default !important; }
+html.showcursor button, html.showcursor #c3d { cursor: pointer !important; }

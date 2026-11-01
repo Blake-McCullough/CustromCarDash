@@ -7,6 +7,7 @@ signals in signals.json, and streams them to the dash page over a WebSocket.
 
   python3 dash_server.py            # live from can0
   python3 dash_server.py --demo     # simulated drive, no car needed
+  python3 dash_server.py --cursor   # show the mouse pointer (add to either)
 Open http://localhost:8080
 """
 import argparse
@@ -266,7 +267,10 @@ async def ws_handler(request):
 
 
 async def index(request):
-    return web.FileResponse(HERE / "static" / "index.html", headers={"Cache-Control": "no-cache"})
+    html = (HERE / "static" / "index.html").read_text(encoding="utf-8")
+    if request.app["cursor"]:
+        html = html.replace('<html lang="en">', '<html lang="en" class="showcursor">', 1)
+    return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
 def main():
@@ -276,12 +280,14 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--signals", default=str(HERE / "signals.json"))
+    ap.add_argument("--cursor", action="store_true", help="show the mouse cursor (hidden by default for touch screens)")
     args = ap.parse_args()
 
     sigs, by_id = load_signals(args.signals)
     app = web.Application()
     app["state"] = BusState(sigs, by_id)
     app["clients"] = {}
+    app["cursor"] = args.cursor
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
     app.router.add_static("/static", HERE / "static")

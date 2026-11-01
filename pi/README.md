@@ -50,6 +50,7 @@ ip -details link show can0        # should say LISTEN-ONLY, bitrate 500000
 candump can0                      # raw traffic
 journalctl -u impreza-dash -f     # backend log
 python3 dash_server.py --demo     # run manually on simulated data (stop the service first)
+python3 dash_server.py --cursor   # show the mouse pointer (or add ?cursor to the URL)
 ```
 
 ## Themes
@@ -64,7 +65,8 @@ in the same glowing wireframe style, with spinning and steering wheels if the wh
 ## Preview on your Windows PC (no Pi needed)
 1. Install Python from python.org (tick **Add python.exe to PATH**).
 2. In a terminal: `pip install aiohttp`
-3. In the `pi` folder: `python dash_server.py --demo`
+3. In the `pi` folder: `python dash_server.py --demo --cursor` (`--cursor` shows the mouse pointer,
+   which is hidden by default for the touch screen)
 4. Open **http://localhost:8080** in Chrome. Press **F11** for full screen.
 5. To see it at your screen's exact size: press **F12** → device toolbar icon → enter your screen's
    resolution (e.g. 1024 × 600).

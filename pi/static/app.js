@@ -30,7 +30,8 @@ const trip = { dist: 0, moveTime: 0, start: null, top: 0, lastT: null, lostAt: '
 const zt = { state: 'idle', t0: 0, run: null, best: store.get('zt_best', null) };
 
 // ---------------------------------------------------------------- UI setup
-const AUTO_FX = !new URLSearchParams(location.search).has('keepfx');   // ?keepfx disables auto quality drop
+const AUTO_FX = !new URLSearchParams(location.search).has('keepfx');
+if (new URLSearchParams(location.search).has('cursor')) document.documentElement.classList.add('showcursor');   // ?cursor shows the mouse   // ?keepfx disables auto quality drop
 const SEGS = 35;
 const segEls = [];
 for (let i = 0; i < SEGS; i++) { const s = document.createElement('i'); $('segs').appendChild(s); segEls.push(s); }
