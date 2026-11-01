@@ -4,8 +4,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-const RED = new THREE.Color(0xff2d4a);
+const DEFAULT_ACCENT = 0xff2d4a;
 const WHEEL_R = 0.32;
 const AXLE_F = 1.32, AXLE_R = -1.28, TRACK = 0.77;
 const BODY_W = 1.74, CABIN_W = 1.40;
@@ -63,6 +64,9 @@ export class Car3D {
     this.dist = 0;
     this.hq = true;
     this.lineMats = [];
+    this.fillMats = [];
+    this.accent = new THREE.Color(DEFAULT_ACCENT);
+    this.modelInfo = 'built-in';
 
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -78,6 +82,8 @@ export class Car3D {
     scene.add(this.root);
     this.body = new THREE.Group();
     this.root.add(this.body);
+    this.builtin = new THREE.Group();       // procedural car, hidden if a model is loaded
+    this.body.add(this.builtin);
 
     this._buildBody();
     this._buildWheels();
@@ -95,23 +101,25 @@ export class Car3D {
     this.resize();
   }
 
-  _line(geo, opacity = 1, color = RED) {
-    const m = new THREE.LineBasicMaterial({ color, transparent: true, opacity });
+  _line(geo, opacity = 1) {
+    const m = new THREE.LineBasicMaterial({ color: this.accent.clone(), transparent: true, opacity });
     this.lineMats.push(m);
     return new THREE.LineSegments(geo, m);
   }
 
-  _fill(geo, opacity = 0.06) {
-    return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-      color: RED, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide,
-    }));
+  _fillMat(opacity = 0.06) {
+    const m = new THREE.MeshBasicMaterial({ color: this.accent.clone(), transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
+    this.fillMats.push(m);
+    return m;
   }
+
+  _fill(geo, opacity = 0.06) { return new THREE.Mesh(geo, this._fillMat(opacity)); }
 
   _buildBody() {
     const bodyGeo = extrude(bodyShape(), BODY_W);
     const cabGeo = extrude(cabinShape(), CABIN_W);
-    this.body.add(this._fill(bodyGeo, 0.07), this._line(new THREE.EdgesGeometry(bodyGeo, 12)));
-    this.body.add(this._fill(cabGeo, 0.035), this._line(new THREE.EdgesGeometry(cabGeo, 12)));
+    this.builtin.add(this._fill(bodyGeo, 0.07), this._line(new THREE.EdgesGeometry(bodyGeo, 12)));
+    this.builtin.add(this._fill(cabGeo, 0.035), this._line(new THREE.EdgesGeometry(cabGeo, 12)));
 
     // detail lines: door shuts, B-pillar, sills, bonnet line, grille
     const P = [];
@@ -133,14 +141,14 @@ export class Car3D {
     seg([1.05, 0.95, -0.5], [1.95, 0.80, -0.4]);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-    this.body.add(this._line(g, 0.75));
+    this.builtin.add(this._line(g, 0.75));
 
     // mirrors
     for (const s of [1, -1]) {
       const mg = new THREE.BoxGeometry(0.16, 0.1, 0.16);
       const m = this._line(new THREE.EdgesGeometry(mg));
       m.position.set(0.9, 1.0, s * (BODY_W / 2 + 0.09));
-      this.body.add(m);
+      this.builtin.add(m);
     }
   }
 
@@ -173,15 +181,17 @@ export class Car3D {
       face.add(this._line(rimEdges, 0.9), this._line(spokeGeo, 0.9));
       spin.add(face);
       this.root.add(pivot);
-      this.wheels[k] = { pivot, spin, anchor: new THREE.Vector3() };
+      this.wheels[k] = { pivot, spin, anchor: new THREE.Vector3(), builtin: true };
     }
   }
 
   _buildLights() {
+    this.lightGroup = new THREE.Group();
+    this.body.add(this.lightGroup);
     const mk = (w, h, d, x, y, z) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ color: 0x330408 }));
       m.position.set(x, y, z);
-      this.body.add(m);
+      this.lightGroup.add(m);
       return m;
     };
     this.brakeL = [mk(0.04, 0.12, 0.34, -2.215, 0.80, 0.56), mk(0.04, 0.12, 0.34, -2.215, 0.80, -0.56)];
@@ -190,14 +200,9 @@ export class Car3D {
   }
 
   _buildGround() {
-    const grid = this.grid = new THREE.GridHelper(60, 60, 0x5a0d18, 0x2a070c);
-    grid.material.transparent = true;
-    grid.material.opacity = 0.7;
-    this.scene.add(grid);
+    this._makeGrid();
     // contact shadow
-    const sh = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 2.1), new THREE.MeshBasicMaterial({
-      color: 0xff2d4a, transparent: true, opacity: 0.05, depthWrite: false,
-    }));
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 2.1), this._fillMat(0.05));
     sh.rotation.x = -Math.PI / 2;
     sh.position.y = 0.003;
     this.root.add(sh);
@@ -214,7 +219,7 @@ export class Car3D {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     this.particles = new THREE.Points(g, new THREE.PointsMaterial({
-      color: RED, size: 0.045, transparent: true, opacity: 0.8, depthWrite: false,
+      color: this.accent.clone(), size: 0.045, transparent: true, opacity: 0.8, depthWrite: false,
     }));
     this.scene.add(this.particles);
   }
@@ -232,6 +237,99 @@ export class Car3D {
       this.orbitAz = down.az - dx * 0.01;
       this.orbitEl = Math.min(1.35, Math.max(0.05, down.el + dy * 0.006));
     });
+  }
+
+  _makeGrid() {
+    if (this.grid) { this.scene.remove(this.grid); this.grid.geometry.dispose(); this.grid.material.dispose(); }
+    const c1 = this.accent.clone().multiplyScalar(0.35), c2 = this.accent.clone().multiplyScalar(0.16);
+    const grid = this.grid = new THREE.GridHelper(60, 60, c1, c2);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.7;
+    this.scene.add(grid);
+  }
+
+  // hex like '#ff2d4a'; bg is the page background (fog fades into it)
+  setTheme(hex, bg = '#050608') {
+    this.accent.set(hex);
+    for (const m of this.lineMats) m.color.copy(this.accent);
+    for (const m of this.fillMats) m.color.copy(this.accent);
+    this.particles.material.color.copy(this.accent);
+    this.scene.fog.color.set(bg);
+    this._makeGrid();
+  }
+
+  // Optional real car model: static/models/model.json + a .glb file (see static/models/README.md)
+  async loadModel() {
+    let cfg;
+    try {
+      const r = await fetch('/static/models/model.json', { cache: 'no-cache' });
+      if (!r.ok) return false;
+      cfg = await r.json();
+      if (!cfg.file || cfg.enabled === false) return false;
+    } catch { return false; }
+
+    let gltf;
+    try { gltf = await new GLTFLoader().loadAsync('/static/models/' + cfg.file); }
+    catch (e) { console.warn('model load failed, using built-in car', e); this.modelInfo = 'model failed: ' + cfg.file; return false; }
+
+    const obj = gltf.scene;
+    const holder = new THREE.Group();
+    holder.add(obj);
+    obj.rotation.y = THREE.MathUtils.degToRad(cfg.rotateY || 0);
+    holder.updateMatrixWorld(true);
+
+    // scale to real length, centre it, sit it on the ground
+    let box = new THREE.Box3().setFromObject(holder);
+    const size = box.getSize(new THREE.Vector3());
+    const scale = (cfg.length || 4.42) / Math.max(size.x, size.z);
+    holder.scale.setScalar(scale);
+    holder.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(holder);
+    const c = box.getCenter(new THREE.Vector3());
+    holder.position.set(-c.x + (cfg.offsetX || 0), -box.min.y + (cfg.offsetY || 0), -c.z);
+    this.body.add(holder);
+    holder.updateMatrixWorld(true);
+
+    // turn every mesh into glowing edges + faint fill
+    let tris = 0;
+    const fill = this._fillMat(cfg.fillOpacity ?? 0.05);
+    obj.traverse(n => {
+      if (!n.isMesh) return;
+      const g = n.geometry;
+      tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+      n.add(this._line(new THREE.EdgesGeometry(g, cfg.edgeAngle || 30), cfg.lineOpacity ?? 0.9));
+      n.material = fill;
+    });
+    if (tris > 150000) console.warn(`model has ${Math.round(tris)} triangles: may be slow on a Pi`);
+
+    // wheels: re-parent named wheel nodes onto pivots so they spin and steer
+    const names = cfg.wheels || {};
+    const found = {};
+    for (const k of ['fl', 'fr', 'rl', 'rr']) if (names[k]) found[k] = obj.getObjectByName(names[k]);
+    const haveWheels = ['fl', 'fr', 'rl', 'rr'].every(k => found[k]);
+    this.root.updateMatrixWorld(true);
+    if (haveWheels) {
+      for (const k of ['fl', 'fr', 'rl', 'rr']) {
+        const node = found[k];
+        const wc = new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3());
+        this.root.worldToLocal(wc);
+        const pivot = new THREE.Group(); pivot.position.copy(wc);
+        const spin = new THREE.Group(); pivot.add(spin);
+        this.root.add(pivot);
+        this.root.updateMatrixWorld(true);
+        spin.attach(node);
+        this.root.remove(this.wheels[k].pivot);
+        this.wheels[k] = { pivot, spin, anchor: new THREE.Vector3(), builtin: false };
+      }
+    } else {
+      // model wheels stay static; hide the built-in wheels so they don't double up
+      for (const w of Object.values(this.wheels)) w.pivot.visible = !!cfg.keepBuiltinWheels;
+    }
+
+    this.builtin.visible = false;
+    this.lightGroup.visible = !!cfg.keepBuiltinLights;
+    this.modelInfo = `${cfg.file} · ${Math.round(tris / 1000)}k tris${haveWheels ? ' · animated wheels' : ''}`;
+    return true;
   }
 
   setMode(m) { this.mode = m; this.lastInteract = performance.now(); }

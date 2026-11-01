@@ -63,6 +63,38 @@ car.onModeChange = selectCam;
 const savedCam = store.get('cam', 'auto');
 car.setMode(savedCam); selectCam(savedCam);
 
+// ---------------------------------------------------------------- themes
+const THEMES = {
+  red:    { name: 'RED',     acc: '#ff2d4a', tint: '#12070a' },
+  wrb:    { name: 'WR BLUE', acc: '#2f7bff', tint: '#060b1c' },
+  ice:    { name: 'ICE',     acc: '#2ee6ff', tint: '#05121a' },
+  matrix: { name: 'MATRIX',  acc: '#39ff7a', tint: '#06140a' },
+  gold:   { name: 'GOLD',    acc: '#e8b33a', tint: '#151005' },
+  neon:   { name: 'NEON',    acc: '#b14dff', tint: '#10061a' },
+  pink:   { name: 'SYNTH',   acc: '#ff3fb4', tint: '#170612' },
+  mono:   { name: 'MONO',    acc: '#e8ecf2', tint: '#0d0e10' },
+};
+let theme = store.get('theme', 'red');
+if (!THEMES[theme]) theme = 'red';
+const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+function applyTheme(key) {
+  theme = key; store.set('theme', key);
+  const t = THEMES[key], st = document.documentElement.style;
+  st.setProperty('--acc', t.acc); st.setProperty('--accglow', hexA(t.acc, 0.55)); st.setProperty('--tint', t.tint);
+  car.setTheme(t.acc);
+  LANES[0].color = t.acc;
+  document.querySelectorAll('#tgrid button').forEach(b => b.classList.toggle('on', b.dataset.t === key));
+}
+for (const [k, t] of Object.entries(THEMES)) {
+  const b = document.createElement('button');
+  b.dataset.t = k;
+  b.innerHTML = `<i style="background:${t.acc};box-shadow:0 0 14px ${t.acc}"></i>${t.name}`;
+  b.onclick = e => { e.stopPropagation(); applyTheme(k); };
+  $('tgrid').appendChild(b);
+}
+$('themebtn').onclick = () => { $('modelinfo').textContent = 'CAR MODEL: ' + car.modelInfo; $('themes').classList.add('show'); };
+$('themes').onclick = () => $('themes').classList.remove('show');
+
 let hq = store.get('fx', true);
 function applyFx(save) { car.setQuality(hq); $('fx').textContent = 'FX: ' + (hq ? 'HIGH' : 'LOW'); if (save) store.set('fx', hq); }
 $('fx').onclick = () => { hq = !hq; applyFx(true); };
@@ -254,10 +286,11 @@ function drawG(lat, lng) {
   const now = performance.now();
   gTrail.push([px, py, now]);
   while (gTrail.length && now - gTrail[0][2] > 1500) gTrail.shift();
-  gx.lineWidth = 2 * dpr; gx.strokeStyle = 'rgba(255,45,74,.35)'; gx.beginPath();
+  const acc = THEMES[theme].acc;
+  gx.lineWidth = 2 * dpr; gx.strokeStyle = hexA(acc, 0.35); gx.beginPath();
   gTrail.forEach(([x, y], i) => i ? gx.lineTo(x, y) : gx.moveTo(x, y)); gx.stroke();
-  gx.shadowColor = 'rgba(255,45,74,.9)'; gx.shadowBlur = 14 * dpr;
-  gx.fillStyle = '#ff2d4a'; gx.beginPath(); gx.arc(px, py, 6 * dpr, 0, Math.PI * 2); gx.fill(); gx.shadowBlur = 0;
+  gx.shadowColor = hexA(acc, 0.9); gx.shadowBlur = 14 * dpr;
+  gx.fillStyle = acc; gx.beginPath(); gx.arc(px, py, 6 * dpr, 0, Math.PI * 2); gx.fill(); gx.shadowBlur = 0;
   const tot = Math.hypot(lat, lng);
   gPeak = Math.max(gPeak, tot);
   setText('glat', Math.abs(lat).toFixed(2)); setText('glong', lng.toFixed(2)); setText('gpeak', gPeak.toFixed(2));
@@ -349,5 +382,7 @@ function loop(t) {
   }
   requestAnimationFrame(loop);
 }
+applyTheme(theme);
+car.loadModel().then(ok => { if (ok) applyTheme(theme); });
 lastMsg = performance.now();
 requestAnimationFrame(loop);

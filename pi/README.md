@@ -52,6 +52,25 @@ journalctl -u impreza-dash -f     # backend log
 python3 dash_server.py --demo     # run manually on simulated data (stop the service first)
 ```
 
+## Themes
+Tap **THEME** in the bottom bar: Red, WR Blue, Ice, Matrix, Gold, Neon, Synth or Mono. It's remembered
+between boots. The 3D car, glow, grid, G-meter and highlights all follow the theme. Warning colours
+(brake, slip, check engine, redline) stay red.
+
+## Using a real car model
+See `static/models/README.md`. Drop in a .glb file and a small `model.json`, and the dash renders it
+in the same glowing wireframe style, with spinning and steering wheels if the wheels are separate objects.
+
+## Preview on your Windows PC (no Pi needed)
+1. Install Python from python.org (tick **Add python.exe to PATH**).
+2. In a terminal: `pip install aiohttp`
+3. In the `pi` folder: `python dash_server.py --demo`
+4. Open **http://localhost:8080** in Chrome. Press **F11** for full screen.
+5. To see it at your screen's exact size: press **F12** → device toolbar icon → enter your screen's
+   resolution (e.g. 1024 × 600).
+Edit any file, then press **Ctrl+F5** in the browser to see the change. No need to restart the server,
+except after editing `signals.json` or `dash_server.py`.
+
 ## Notes
 - **Settings** (redline, shift light, steering ratio) are at the top of `static/app.js`.
 - **FX: HIGH/LOW** in the bottom bar toggles the glow effect. It drops to LOW automatically if the

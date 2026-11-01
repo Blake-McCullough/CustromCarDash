@@ -1,0 +1,31 @@
+# Using a real car model
+
+The dash draws a built-in generic hatchback. To use a real model of your Impreza:
+
+1. Get a model in **.glb / .gltf** format (or convert one in Blender, see below).
+2. Put it in this folder, e.g. `impreza.glb`.
+3. Copy `model.example.json` to **`model.json`** and set `"file"` to your file name.
+4. Reload the dash. Open **THEME** in the bottom bar: it shows which model loaded.
+
+Delete `model.json` (or set `"enabled": false`) to go back to the built-in car.
+
+## model.json settings
+| Key | What it does |
+|---|---|
+| `rotateY` | Degrees to turn the model so it faces the right way. Try 90, -90 or 180 if it's sideways or backwards. |
+| `length` | Real car length in metres. The model is scaled to this. A GP Impreza is about 4.42 m (hatch) / 4.58 m (sedan). |
+| `edgeAngle` | Higher = fewer, cleaner wireframe lines (try 20–45). |
+| `wheels` | Names of the 4 wheel objects in the model. When all 4 are found, they spin and the fronts steer. |
+| `keepBuiltinWheels` | If your model's wheels can't be separated, set `true` to draw the animated built-in wheels over it. |
+
+## Getting and preparing a model (Blender, free)
+1. Find a model. Search Sketchfab, CGTrader or TurboSquid for "Subaru Impreza 2012", "2013" or "GP".
+   The 2012–16 Subaru XV/Crosstrek shares the body. Check the licence: CC-BY is fine for personal
+   use if you credit the author. Many paid models are "editorial use" only, which also covers a personal dash.
+2. Open it in **Blender** (File → Import).
+3. **Delete the interior, engine and glass detail.** Every edge becomes a glowing line, so fewer is better.
+   Aim for **under ~100k triangles**. Use a **Decimate** modifier on heavy parts if needed.
+4. Make sure each wheel (tyre + rim) is **one separate object**, and rename them `Wheel_FL`, `Wheel_FR`,
+   `Wheel_RL`, `Wheel_RR` (FL = front left, from the driver's seat).
+5. File → Export → **glTF 2.0 (.glb)**, with "+Y Up" ticked (the default).
+6. Copy the .glb here and create `model.json` as above.
