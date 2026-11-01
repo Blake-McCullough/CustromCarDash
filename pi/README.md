@@ -53,9 +53,17 @@ python3 dash_server.py --demo     # run manually on simulated data (stop the ser
 python3 dash_server.py --cursor   # show the mouse pointer (or add ?cursor to the URL)
 ```
 
+## Settings (⚙ bottom right)
+- **Theme:** Red, WR Blue, Ice, Matrix, Gold, Neon, Synth or Mono.
+- **Graphics:** glow effects high/low, auto-lower when the frame rate drops, particles on/off.
+- **Shift lights:** where the lights start flashing, and the redline.
+- **Reset:** trip, best 0–100, peak G, or all settings.
+- **System:** data source, CAN frame rate, signals, car model, screen size, render fps.
+
+Settings are saved on the Pi in `settings.json`, so they survive reboots.
+
 ## Themes
-Tap **THEME** in the bottom bar: Red, WR Blue, Ice, Matrix, Gold, Neon, Synth or Mono. It's remembered
-between boots. The 3D car, glow, grid, G-meter and highlights all follow the theme. Warning colours
+The 3D car, glow, grid, G-meter and highlights all follow the theme. Warning colours
 (brake, slip, check engine, redline) stay red.
 
 ## Using a real car model
@@ -74,9 +82,8 @@ Edit any file, then press **Ctrl+F5** in the browser to see the change. No need 
 except after editing `signals.json` or `dash_server.py`.
 
 ## Notes
-- **Settings** (redline, shift light, steering ratio) are at the top of `static/app.js`.
-- **FX: HIGH/LOW** in the bottom bar toggles the glow effect. It drops to LOW automatically if the
-  frame rate falls below 30.
+- Steering ratio and the wheel-slip threshold are at the top of `static/app.js`.
+- Glow effects drop to LOW automatically if the frame rate falls below 30 (switch this off in ⚙ Settings).
 - Camera: tap AUTO/ORBIT/CHASE/SIDE/FRONT/TOP, or drag the car to orbit it.
 - Boot: the dash should be up roughly 8–12 s after power. Chromium runs with a fresh profile in RAM
   each boot, so cutting power can't corrupt it.

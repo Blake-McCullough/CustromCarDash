@@ -112,6 +112,37 @@
     </div>
   </section>
 
+  <!-- ============ SETTINGS ============ -->
+  <section id="v-settings" class="view">
+    <div class="card sblock theme">
+      <div class="label">THEME</div>
+      <div class="tgrid2" id="tgrid"></div>
+    </div>
+    <div class="scol">
+      <div class="card sblock">
+        <div class="label">GRAPHICS</div>
+        <div class="opt"><span>Glow effects</span><div class="seg2" id="o-fx"><button data-v="1">HIGH</button><button data-v="0">LOW</button></div></div>
+        <div class="opt"><span>Auto-lower if slow</span><div class="seg2" id="o-autofx"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
+        <div class="opt"><span>Particles</span><div class="seg2" id="o-particles"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
+      </div>
+      <div class="card sblock">
+        <div class="label">SHIFT LIGHTS</div>
+        <div class="opt"><span>Flash from</span><div class="step" data-k="shiftAt" data-step="100" data-min="2000" data-max="7500"><button>&minus;</button><b></b><button>+</button></div></div>
+        <div class="opt"><span>Redline</span><div class="step" data-k="redline" data-step="100" data-min="3000" data-max="8000"><button>&minus;</button><b></b><button>+</button></div></div>
+      </div>
+      <div class="card sblock">
+        <div class="label">RESET</div>
+        <div class="resets">
+          <button id="r-trip">TRIP</button><button id="r-zt">0–100 BEST</button><button id="r-g">G PEAK</button><button id="r-all">ALL SETTINGS</button>
+        </div>
+      </div>
+      <div class="card sblock">
+        <div class="label">SYSTEM</div>
+        <div class="sysinfo" id="sysinfo"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ BUS ============ -->
   <section id="v-bus" class="view">
     <div class="card buswrap">
@@ -127,17 +158,8 @@
   <button data-view="bus">BUS</button>
   <div class="spacer"></div>
   <span class="dim" id="unv"></span>
-  <button id="themebtn">THEME</button>
-  <button id="fx">FX: HIGH</button>
+  <button data-view="settings" class="cog" title="Settings">&#9881;</button>
 </nav>
-
-<div id="themes">
-  <div class="tbox">
-    <div class="label">THEME</div>
-    <div class="tgrid2" id="tgrid"></div>
-    <span class="dim" id="modelinfo"></span>
-  </div>
-</div>
 
 <div id="off">
   <div class="offinner">

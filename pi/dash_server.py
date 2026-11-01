@@ -14,6 +14,7 @@ import argparse
 import asyncio
 import json
 import math
+import os
 import random
 import time
 from pathlib import Path
@@ -266,10 +267,46 @@ async def ws_handler(request):
     return ws
 
 
+SETTINGS_FILE = HERE / "settings.json"
+
+
+async def get_settings(request):
+    try:
+        data = json.loads(SETTINGS_FILE.read_text())
+    except (OSError, ValueError):
+        data = {}
+    return web.json_response(data, headers={"Cache-Control": "no-cache"})
+
+
+async def post_settings(request):
+    try:
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise ValueError
+    except ValueError:
+        return web.Response(status=400, text="bad json")
+    tmp = SETTINGS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=1))
+    os.replace(tmp, SETTINGS_FILE)          # atomic: safe if power is cut mid-write
+    return web.json_response({"ok": True})
+
+
+@web.middleware
+async def no_cache(request, handler):
+    """Always re-check files, so edits show up on a normal refresh."""
+    resp = await handler(request)
+    if request.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 async def index(request):
     html = (HERE / "static" / "index.html").read_text(encoding="utf-8")
     if request.app["cursor"]:
+        # inline so it works even if the browser has an old style.css cached
         html = html.replace('<html lang="en">', '<html lang="en" class="showcursor">', 1)
+        html = html.replace("</head>", "<style>html.showcursor, html.showcursor * { cursor: default !important; }"
+                            " html.showcursor button, html.showcursor #c3d { cursor: pointer !important; }</style>\n</head>", 1)
     return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
@@ -284,12 +321,14 @@ def main():
     args = ap.parse_args()
 
     sigs, by_id = load_signals(args.signals)
-    app = web.Application()
+    app = web.Application(middlewares=[no_cache])
     app["state"] = BusState(sigs, by_id)
     app["clients"] = {}
     app["cursor"] = args.cursor
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
+    app.router.add_get("/api/settings", get_settings)
+    app.router.add_post("/api/settings", post_settings)
     app.router.add_static("/static", HERE / "static")
 
     async def start_bg(app):

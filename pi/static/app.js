@@ -11,10 +11,24 @@ const CFG = {
 
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// Settings are saved on the Pi (settings.json via the backend), because the kiosk browser
+// starts with a fresh profile every boot.
+let SETTINGS = {};
+try { SETTINGS = await (await fetch('/api/settings', { cache: 'no-store' })).json(); } catch { /* backend not up: defaults */ }
+let saveTimer;
 const store = {
-  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+  get(k, d) { return k in SETTINGS ? SETTINGS[k] : d; },
+  set(k, v) {
+    SETTINGS[k] = v;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => fetch('/api/settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(SETTINGS),
+    }).catch(() => {}), 300);
+  },
 };
+CFG.redline = store.get('redline', CFG.redline);
+CFG.shiftAt = store.get('shiftAt', CFG.shiftAt);
 
 // ---------------------------------------------------------------- state
 let meta = {};
@@ -30,19 +44,23 @@ const trip = { dist: 0, moveTime: 0, start: null, top: 0, lastT: null, lostAt: '
 const zt = { state: 'idle', t0: 0, run: null, best: store.get('zt_best', null) };
 
 // ---------------------------------------------------------------- UI setup
-const AUTO_FX = !new URLSearchParams(location.search).has('keepfx');
+let AUTO_FX = store.get('autofx', true) && !new URLSearchParams(location.search).has('keepfx');
 if (new URLSearchParams(location.search).has('cursor')) document.documentElement.classList.add('showcursor');   // ?cursor shows the mouse   // ?keepfx disables auto quality drop
 const SEGS = 35;
 const segEls = [];
 for (let i = 0; i < SEGS; i++) { const s = document.createElement('i'); $('segs').appendChild(s); segEls.push(s); }
-for (let i = 0; i < SEGS; i++) {
-  const r = (i / SEGS) * CFG.rpmMax;
-  segEls[i].dataset.cls = r >= CFG.redline - 250 ? 'on r' : r >= CFG.shiftAt - 1500 ? 'on w' : 'on';
+function buildSegs() {
+  CFG.rpmMax = Math.max(7000, CFG.redline + 500);
+  for (let i = 0; i < SEGS; i++) {
+    const r = (i / SEGS) * CFG.rpmMax;
+    segEls[i].dataset.cls = r >= CFG.redline - 250 ? 'on r' : r >= CFG.shiftAt - 1500 ? 'on w' : 'on';
+  }
 }
+buildSegs();
 
 document.addEventListener('contextmenu', e => e.preventDefault());
 
-const views = { drive: $('v-drive'), graphs: $('v-graphs'), bus: $('v-bus') };
+const views = { drive: $('v-drive'), graphs: $('v-graphs'), bus: $('v-bus'), settings: $('v-settings') };
 let view = 'drive';
 document.querySelectorAll('nav [data-view]').forEach(b => b.onclick = () => {
   view = b.dataset.view;
@@ -50,6 +68,7 @@ document.querySelectorAll('nav [data-view]').forEach(b => b.onclick = () => {
   for (const [k, el] of Object.entries(views)) el.classList.toggle('on', k === view);
   setBus(view === 'bus');
   if (view === 'drive') requestAnimationFrame(() => car.resize());
+  if (view === 'settings') renderSettings();
 });
 
 const car = new Car3D($('c3d'));
@@ -90,16 +109,67 @@ for (const [k, t] of Object.entries(THEMES)) {
   const b = document.createElement('button');
   b.dataset.t = k;
   b.innerHTML = `<i style="background:${t.acc};box-shadow:0 0 14px ${t.acc}"></i>${t.name}`;
-  b.onclick = e => { e.stopPropagation(); applyTheme(k); };
+  b.onclick = () => applyTheme(k);
   $('tgrid').appendChild(b);
 }
-$('themebtn').onclick = () => { $('modelinfo').textContent = 'CAR MODEL: ' + car.modelInfo; $('themes').classList.add('show'); };
-$('themes').onclick = () => $('themes').classList.remove('show');
 
 let hq = store.get('fx', true);
-function applyFx(save) { car.setQuality(hq); $('fx').textContent = 'FX: ' + (hq ? 'HIGH' : 'LOW'); if (save) store.set('fx', hq); }
-$('fx').onclick = () => { hq = !hq; applyFx(true); };
-applyFx();
+function applyFx(save) { car.setQuality(hq); if (save) store.set('fx', hq); renderSettings(); }
+
+// ---------------------------------------------------------------- settings page
+function seg(id, val, onPick) {
+  const el = $(id);
+  el.querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.dataset.v === (val ? '1' : '0'));
+    b.onclick = () => onPick(b.dataset.v === '1');
+  });
+}
+function renderSettings() {
+  seg('o-fx', hq, v => { hq = v; applyFx(true); });
+  seg('o-autofx', AUTO_FX, v => { AUTO_FX = v; store.set('autofx', v); renderSettings(); });
+  const parts = store.get('particles', true);
+  car.particles.visible = parts;
+  seg('o-particles', parts, v => { store.set('particles', v); renderSettings(); });
+  document.querySelectorAll('.step').forEach(st => { st.querySelector('b').textContent = CFG[st.dataset.k].toLocaleString(); });
+  renderSysinfo();
+}
+document.querySelectorAll('.step').forEach(st => {
+  const [minus, , plus] = st.children;
+  const bump = d => {
+    const k = st.dataset.k, step = +st.dataset.step;
+    CFG[k] = clamp(CFG[k] + d * step, +st.dataset.min, +st.dataset.max);
+    if (CFG.shiftAt > CFG.redline) { if (k === 'shiftAt') CFG.redline = CFG.shiftAt; else CFG.shiftAt = CFG.redline; }
+    store.set('redline', CFG.redline); store.set('shiftAt', CFG.shiftAt);
+    buildSegs(); LANES[0].max = CFG.rpmMax; renderSettings();
+  };
+  minus.onclick = () => bump(-1);
+  plus.onclick = () => bump(1);
+});
+const flashDone = b => { b.classList.add('done'); setTimeout(() => b.classList.remove('done'), 900); };
+$('r-trip').onclick = e => { Object.assign(trip, { dist: 0, moveTime: 0, start: null, top: 0, lastT: null }); flashDone(e.currentTarget); };
+$('r-zt').onclick = e => { zt.best = null; zt.run = null; store.set('zt_best', null); flashDone(e.currentTarget); };
+$('r-g').onclick = e => { gPeak = 0; flashDone(e.currentTarget); };
+$('r-all').onclick = () => {
+  SETTINGS = {};
+  fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    .finally(() => location.reload());
+};
+function renderSysinfo() {
+  if (view !== 'settings') return;
+  const n = Object.values(meta).filter(m => !m.verified).length;
+  const rows = [
+    ['Data source', !link ? 'no CAN link' : source === 'demo' ? 'demo (simulated)' : 'live CAN (can0)'],
+    ['CAN frames/s', $('fps').textContent],
+    ['Signals', `${Object.keys(meta).length} defined · ${n} unverified`],
+    ['Car model', car.modelInfo],
+    ['Screen', `${window.innerWidth} × ${window.innerHeight}`],
+    ['Render', `${$('gfps').textContent} fps · effects ${hq ? 'high' : 'low'}`],
+  ];
+  $('sysinfo').innerHTML = rows.map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join('');
+}
+setInterval(renderSysinfo, 1000);
+applyFx(false);
+
 
 window.addEventListener('resize', () => { car.resize(); });
 setInterval(() => { $('clock').textContent = new Date().toTimeString().slice(0, 5); }, 1000);
@@ -378,7 +448,7 @@ function loop(t) {
     const fps = Math.round(frames * 1000 / (t - fpsT));
     setText('gfps', String(fps));
     // auto-drop effects if the Pi can't keep up
-    if (AUTO_FX && hq && view === 'drive' && fps < 30) { if (++slowSecs >= 5) { hq = false; applyFx(); } } else slowSecs = 0;
+    if (AUTO_FX && hq && view === 'drive' && fps < 30) { if (++slowSecs >= 5) { hq = false; applyFx(false); } } else slowSecs = 0;
     frames = 0; fpsT = t;
   }
   requestAnimationFrame(loop);
