@@ -1,15 +1,33 @@
 {
-  "_readme": "Candidate decodes for a 2013 Subaru Impreza (500 kbit/s on OBD pins 6/14). Sources: a 2013 Subaru main-bus decode posted on the Autosport Labs forum, plus 0x140 RPM from 2015 WRX logs. These were not logged on a GP Impreza, so verify each one in the BUS view, then set verified=true. Fields: id, start_byte, length (bytes), endian (big|little), signed, shift, mask, scale, offset, unit.",
+  "_readme": "Signal decodes for a 2013 Subaru Impreza (500 kbit/s, OBD pins 6/14). Starting points from a 2013 Subaru main-bus decode (Autosport Labs forum) + 0x140 RPM from 2015 WRX logs. NONE are verified on your car yet: confirm each in the BUS tab, then set verified=true. Fields: id, start_byte, length (bytes), endian (big|little), signed, shift (bits), mask, scale, offset, unit.",
 
-  "rpm":       { "id": "0x410", "start_byte": 5, "length": 2, "endian": "little", "scale": 1,       "unit": "rpm",  "verified": false },
-  "rpm_alt":   { "id": "0x140", "start_byte": 2, "length": 2, "endian": "little", "mask": "0x3FFF", "scale": 1, "unit": "rpm", "verified": false },
-  "throttle":  { "id": "0x410", "start_byte": 4, "length": 1, "scale": 0.392,                     "unit": "%",    "verified": false },
-  "speed":     { "id": "0x512", "start_byte": 2, "length": 2, "endian": "little", "scale": 0.05625, "unit": "km/h", "verified": false },
-  "coolant":   { "id": "0x600", "start_byte": 3, "length": 1, "offset": -40,                      "unit": "°C",   "verified": false },
-  "gear":      { "id": "0x411", "start_byte": 4, "length": 1,                                     "unit": "raw",  "verified": false },
-  "steering":  { "id": "0x511", "start_byte": 0, "length": 2, "endian": "little", "signed": true, "scale": 0.1, "unit": "°", "verified": false },
-  "brake":     { "id": "0x511", "start_byte": 4, "length": 1, "scale": 0.392,                     "unit": "%",    "verified": false },
-  "clutch":    { "id": "0x600", "start_byte": 6, "length": 1, "shift": 2, "mask": 1,              "unit": "on/off","verified": false },
-  "handbrake": { "id": "0x514", "start_byte": 7, "length": 1, "shift": 7, "mask": 1,              "unit": "on/off","verified": false },
-  "ambient":   { "id": "0x514", "start_byte": 2, "length": 1, "scale": 0.5, "offset": -40,        "unit": "°C",   "verified": false }
+  "rpm":        { "id": "0x410", "start_byte": 5, "length": 2, "endian": "little",                    "unit": "rpm",  "verified": false },
+  "rpm_alt":    { "id": "0x140", "start_byte": 2, "length": 2, "endian": "little", "mask": "0x3FFF",  "unit": "rpm",  "verified": false },
+  "throttle":   { "id": "0x410", "start_byte": 4, "length": 1, "scale": 0.392,                         "unit": "%",    "verified": false },
+  "torque":     { "id": "0x410", "start_byte": 2, "length": 1, "scale": 1.6,                           "unit": "Nm",   "verified": false },
+  "gear":       { "id": "0x411", "start_byte": 4, "length": 1,                                         "unit": "raw",  "verified": false },
+  "cruise":     { "id": "0x411", "start_byte": 5, "length": 1, "mask": 1,                              "unit": "on/off","verified": false },
+  "mil":        { "id": "0x411", "start_byte": 7, "length": 1, "mask": 1,                              "unit": "on/off","verified": false },
+
+  "speed":      { "id": "0x512", "start_byte": 2, "length": 2, "endian": "little", "scale": 0.05625,  "unit": "km/h", "verified": false },
+  "brake_sw":   { "id": "0x512", "start_byte": 4, "length": 1, "shift": 4, "mask": 1,                  "unit": "on/off","verified": false },
+  "vdc_off":    { "id": "0x512", "start_byte": 0, "length": 1, "shift": 4, "mask": 1,                  "unit": "on/off","verified": false },
+  "wheel_fl":   { "id": "0x513", "start_byte": 0, "length": 2, "endian": "little", "scale": 0.05625,  "unit": "km/h", "verified": false },
+  "wheel_fr":   { "id": "0x513", "start_byte": 2, "length": 2, "endian": "little", "scale": 0.05625,  "unit": "km/h", "verified": false },
+  "wheel_rl":   { "id": "0x513", "start_byte": 4, "length": 2, "endian": "little", "scale": 0.05625,  "unit": "km/h", "verified": false },
+  "wheel_rr":   { "id": "0x513", "start_byte": 6, "length": 2, "endian": "little", "scale": 0.05625,  "unit": "km/h", "verified": false },
+
+  "steering":   { "id": "0x511", "start_byte": 0, "length": 2, "endian": "little", "signed": true, "scale": 0.1, "unit": "°", "verified": false },
+  "brake":      { "id": "0x511", "start_byte": 4, "length": 1, "scale": 0.392,                         "unit": "%",    "verified": false },
+  "yaw_rate":   { "id": "0x070", "start_byte": 0, "length": 2, "endian": "little", "scale": 0.005, "offset": -163.84, "unit": "°/s", "verified": false },
+  "lat_g":      { "id": "0x070", "start_byte": 4, "length": 2, "endian": "little", "scale": 0.00012742, "offset": -4.1768, "unit": "g", "verified": false },
+
+  "reverse":    { "id": "0x514", "start_byte": 0, "length": 1, "shift": 2, "mask": 1,                  "unit": "on/off","verified": false },
+  "ambient":    { "id": "0x514", "start_byte": 2, "length": 1, "scale": 0.5, "offset": -40,            "unit": "°C",   "verified": false },
+  "high_beam":  { "id": "0x514", "start_byte": 3, "length": 1, "shift": 3, "mask": 1,                  "unit": "on/off","verified": false },
+  "low_beam":   { "id": "0x514", "start_byte": 3, "length": 1, "shift": 2, "mask": 1,                  "unit": "on/off","verified": false },
+  "handbrake":  { "id": "0x514", "start_byte": 7, "length": 1, "shift": 7, "mask": 1,                  "unit": "on/off","verified": false },
+
+  "coolant":    { "id": "0x600", "start_byte": 3, "length": 1, "offset": -40,                          "unit": "°C",   "verified": false },
+  "clutch":     { "id": "0x600", "start_byte": 6, "length": 1, "shift": 2, "mask": 1,                  "unit": "on/off","verified": false }
 }

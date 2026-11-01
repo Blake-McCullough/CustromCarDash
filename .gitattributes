@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# shell/python must stay LF so they run on the Pi
+*.sh text eol=lf
+*.py text eol=lf

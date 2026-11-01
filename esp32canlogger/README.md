@@ -7,9 +7,9 @@ Standalone: no Pi or laptop needed in the car. Just the ESP32, the CAN board and
 |---|---|
 | 3V3 | Vcc |
 | GND | GND |
-| GPIO5 | TX |
-| GPIO4 | RX |
-| 3V3 | SLNT |
+| GPIO21 | TX (+ 10k resistor TX → 3V3) |
+| GPIO22 | RX |
+| 3V3 | SLNT (**required**) |
 
 | CAN Pal terminal | OBD pin | Pigtail colour |
 |---|---|---|
@@ -20,7 +20,7 @@ Standalone: no Pi or laptop needed in the car. Just the ESP32, the CAN board and
 Termination switch **OFF**. Leave OBD pin 16 (red, +12V) disconnected and taped off.
 Power the ESP32 from a USB car charger.
 
-(SN65HVD230 board instead: 3.3V/GND/TX/RX the same, no SLNT pin, remove its 120 Ω termination.)
+**Do not use the SN65HVD230 board on the car.** It has no silent pin, so a wiring or firmware fault can jam the bus.
 
 ## Flash it
 1. Arduino IDE → Boards Manager → **esp32 by Espressif Systems** (3.x). No other libraries needed.

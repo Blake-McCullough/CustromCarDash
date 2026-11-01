@@ -13,9 +13,9 @@
   Wiring (ESP32 -> CAN Pal):
     3V3    -> VCC
     GND    -> GND
-    GPIO5  -> TX
-    GPIO4  -> RX
-    3V3    -> SLNT   (silent mode)
+    GPIO21 -> TX   (+ 10k resistor TX -> 3V3)
+    GPIO22 -> RX
+    3V3    -> SLNT   (silent mode, REQUIRED)
   CAN Pal -> OBD-II:
     CANH -> pin 6  (green on the pigtail)
     CANL -> pin 14 (green/white)
@@ -31,8 +31,8 @@
 #include "driver/twai.h"
 
 // ---------- Settings ----------
-#define CAN_TX_PIN       GPIO_NUM_5    // ESP32 -> CAN Pal TX
-#define CAN_RX_PIN       GPIO_NUM_4    // ESP32 <- CAN Pal RX
+#define CAN_TX_PIN       GPIO_NUM_21   // ESP32 -> CAN Pal TX  (not GPIO5: it pulses at boot)
+#define CAN_RX_PIN       GPIO_NUM_22   // ESP32 <- CAN Pal RX
 #define SERIAL_BAUD      921600        // UART-bridge boards; ignored on native USB
 #define AUTO_OPEN        true          // start listening on boot (survives the reset
                                        // many boards do when the Pi opens the port)
@@ -64,6 +64,11 @@ static bool timingFor(char code, twai_timing_config_t &t) {
   }
 }
 
+static void holdTxRecessive() {        // TX LOW would jam the car's bus
+  pinMode((int)CAN_TX_PIN, OUTPUT);
+  digitalWrite((int)CAN_TX_PIN, HIGH);
+}
+
 static bool openBus() {
   if (busOpen) return true;
   twai_timing_config_t t;
@@ -74,16 +79,18 @@ static bool openBus() {
   g.rx_queue_len = 128;
   twai_filter_config_t f = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
-  if (twai_driver_install(&g, &t, &f) != ESP_OK) return false;
-  if (twai_start() != ESP_OK) { twai_driver_uninstall(); return false; }
+  if (twai_driver_install(&g, &t, &f) != ESP_OK) { holdTxRecessive(); return false; }
+  if (twai_start() != ESP_OK) { twai_driver_uninstall(); holdTxRecessive(); return false; }
   busOpen = true;
   return true;
 }
+
 
 static void closeBus() {
   if (!busOpen) return;
   twai_stop();
   twai_driver_uninstall();
+  holdTxRecessive();
   busOpen = false;
 }
 
@@ -143,6 +150,7 @@ static void sendFrame(const twai_message_t &m) {
 }
 
 void setup() {
+  holdTxRecessive();
   Serial.begin(SERIAL_BAUD);
   if (LED_PIN >= 0) pinMode(LED_PIN, OUTPUT);
   if (AUTO_OPEN) openBus();
