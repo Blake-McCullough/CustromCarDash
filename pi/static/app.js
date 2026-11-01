@@ -116,6 +116,48 @@ for (const [k, t] of Object.entries(THEMES)) {
 let hq = store.get('fx', true);
 function applyFx(save) { car.setQuality(hq); if (save) store.set('fx', hq); renderSettings(); }
 
+// ---------------------------------------------------------------- car model
+// carModel: 'impreza' (bundled wireframe) | 'custom' (models/model.json + .glb) | 'basic' (built-in shape)
+const CAR = {
+  model: store.get('carModel', 'impreza'),
+  detail: store.get('carDetail', 'high'),
+  style: store.get('carStyle', 'solid'),
+  glow: store.get('carGlow', true),
+  lights: store.get('carLights', true),
+  wheels: store.get('carWheels', true),
+  glass: store.get('carGlass', true),
+};
+let hasCustom = false;
+fetch('/static/models/model.json', { method: 'HEAD', cache: 'no-store' })
+  .then(r => { hasCustom = r.ok; renderSettings(); }).catch(() => {});
+const wireOpts = () => ({ style: CAR.style, glow: CAR.glow, lights: CAR.lights, wheels: CAR.wheels, glass: CAR.glass });
+car.setWireOptions(wireOpts());
+let carBusy = false;
+async function loadCar() {
+  carBusy = true;
+  let ok = false;
+  if (CAR.model === 'impreza') ok = await car.loadImpreza(CAR.detail);
+  else if (CAR.model === 'custom') ok = await car.loadModel();
+  if (ok) applyTheme(theme);
+  carBusy = false;
+  renderSettings();
+}
+function setCar(k, v) {
+  if (CAR[k] === v) return;
+  CAR[k] = v;
+  store.set('car' + k[0].toUpperCase() + k.slice(1), v);
+  if (k === 'model') {
+    // switching between model types is cleanest as a fresh page: save now, then reload
+    clearTimeout(saveTimer);
+    fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(SETTINGS) })
+      .finally(() => location.reload());
+    return;
+  }
+  if (k === 'detail') { if (CAR.model === 'impreza') loadCar(); }
+  else car.setWireOptions(wireOpts());
+  renderSettings();
+}
+
 // ---------------------------------------------------------------- settings page
 function seg(id, val, onPick) {
   const el = $(id);
@@ -124,12 +166,29 @@ function seg(id, val, onPick) {
     b.onclick = () => onPick(b.dataset.v === '1');
   });
 }
+function pick(id, val, onPick) {          // like seg(), for named values
+  $(id).querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.dataset.v === val);
+    b.onclick = () => onPick(b.dataset.v);
+  });
+}
 function renderSettings() {
   seg('o-fx', hq, v => { hq = v; applyFx(true); });
   seg('o-autofx', AUTO_FX, v => { AUTO_FX = v; store.set('autofx', v); renderSettings(); });
   const parts = store.get('particles', true);
   car.particles.visible = parts;
   seg('o-particles', parts, v => { store.set('particles', v); renderSettings(); });
+  // car
+  pick('o-model', CAR.model, v => setCar('model', v));
+  $('o-model').querySelector('[data-v="custom"]').style.display = hasCustom || CAR.model === 'custom' ? '' : 'none';
+  pick('o-style', CAR.style, v => setCar('style', v));
+  pick('o-detail', CAR.detail, v => setCar('detail', v));
+  seg('o-glow', CAR.glow, v => setCar('glow', v));
+  for (const k of ['lights', 'wheels', 'glass']) {     // on/off toggles on one row
+    const b = $('o-' + k); b.classList.toggle('on', CAR[k]); b.onclick = () => setCar(k, !CAR[k]);
+  }
+  document.querySelectorAll('.caronly').forEach(el => el.classList.toggle('na', CAR.model !== 'impreza'));
+  $('o-detail').classList.toggle('busy', carBusy);
   document.querySelectorAll('.step').forEach(st => { st.querySelector('b').textContent = CFG[st.dataset.k].toLocaleString(); });
   renderSysinfo();
 }
@@ -435,7 +494,7 @@ function renderOff() {
 }
 
 // ---------------------------------------------------------------- main loop
-let lastT = performance.now(), frames = 0, fpsT = lastT, slowSecs = 0;
+let lastT = performance.now(), frames = 0, fpsT = lastT, slowSecs = 0, slowCar = 0;
 function loop(t) {
   const dt = Math.min((t - lastT) / 1000, 0.1);
   lastT = t;
@@ -449,11 +508,15 @@ function loop(t) {
     setText('gfps', String(fps));
     // auto-drop effects if the Pi can't keep up
     if (AUTO_FX && hq && view === 'drive' && fps < 30) { if (++slowSecs >= 5) { hq = false; applyFx(false); } } else slowSecs = 0;
+    // still slow with effects off: drop the car to low detail for this session (not saved)
+    if (AUTO_FX && !hq && !carBusy && CAR.model === 'impreza' && CAR.detail === 'high' && view === 'drive' && fps < 25) {
+      if (++slowCar >= 5) { CAR.detail = 'low'; loadCar(); slowCar = 0; }
+    } else slowCar = 0;
     frames = 0; fpsT = t;
   }
   requestAnimationFrame(loop);
 }
 applyTheme(theme);
-car.loadModel().then(ok => { if (ok) applyTheme(theme); });
+loadCar();
 lastMsg = performance.now();
 requestAnimationFrame(loop);

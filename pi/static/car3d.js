@@ -1,4 +1,6 @@
-// Wireframe 3D car for the dash. Generic hatchback built from primitives (no external model).
+// Wireframe 3D car for the dash. Default car: the bundled Impreza sedan wireframe
+// (static/models/impreza_<detail>.bin.gz). Fallbacks: a custom .glb (models/model.json)
+// or the generic hatchback built from primitives.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -67,6 +69,9 @@ export class Car3D {
     this.fillMats = [];
     this.accent = new THREE.Color(DEFAULT_ACCENT);
     this.modelInfo = 'built-in';
+    this.wheelR = WHEEL_R;
+    this.wire = null;                       // bundled Impreza wireframe, once loaded
+    this.wireOpts = { style: 'solid', glow: true, lights: true, wheels: true, glass: true };
 
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -254,8 +259,144 @@ export class Car3D {
     for (const m of this.lineMats) m.color.copy(this.accent);
     for (const m of this.fillMats) m.color.copy(this.accent);
     this.particles.material.color.copy(this.accent);
+    if (this.wire) this.wire.occMat.uniforms.uColor.value.copy(this.accent);
     this.scene.fog.color.set(bg);
     this._makeGrid();
+  }
+
+  // ------------------------------------------------------------ bundled Impreza wireframe
+  // Built offline from a 3D model: feature edges (lines) + a decimated solid copy used as an
+  // occluder, so lines on the far side are hidden ('solid' style) or shown ('xray').
+  async loadImpreza(detail = 'high') {
+    const url = `/static/models/impreza_${detail === 'low' ? 'low' : 'high'}.bin.gz`;
+    let buf;
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(r.status);
+      let u8 = new Uint8Array(await r.arrayBuffer());
+      if (u8[0] === 0x1f && u8[1] === 0x8b) {     // server sent it still gzipped
+        const ds = new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'));
+        u8 = new Uint8Array(await new Response(ds).arrayBuffer());
+      }
+      buf = u8.buffer;
+    } catch (e) {
+      console.warn('Impreza model failed, using built-in car', e);
+      this.modelInfo = 'impreza model missing: ' + url;
+      return false;
+    }
+    this._disposeWire();
+
+    const hlen = new DataView(buf).getUint32(0, true);
+    const H = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, hlen)));
+    const base = 4 + hlen;
+    const geo = spec => {
+      const q = new Uint16Array(buf, base + spec.pos, spec.nv * 3);
+      const p = new Float32Array(q.length), lo = spec.lo, hi = spec.hi;
+      for (let i = 0; i < q.length; i++) { const k = i % 3; p[i] = lo[k] + q[i] / 65535 * (hi[k] - lo[k]); }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+      g.setIndex(new THREE.BufferAttribute(new Uint32Array(buf, base + spec.idx, spec.ni).slice(), 1));
+      return g;
+    };
+
+    const W = this.wire = {
+      group: new THREE.Group(), parts: {}, pivots: [], detail: H.detail, lines: 0,
+      lineMat: this._wireLineMat(0.95), glassMat: this._wireLineMat(0.6),
+      headMat: new THREE.LineBasicMaterial({ color: this.accent.clone(), transparent: true }),
+      tailMat: new THREE.LineBasicMaterial({ color: new THREE.Color(0.55, 0.04, 0.07), transparent: true }),
+      occMat: new THREE.ShaderMaterial({
+        uniforms: { uColor: { value: this.accent.clone() }, uGlow: { value: 1 }, uBase: { value: 0 } },
+        vertexShader: `varying vec3 vN; varying vec3 vV;
+          void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
+        fragmentShader: `uniform vec3 uColor; uniform float uGlow; uniform float uBase; varying vec3 vN; varying vec3 vV;
+          void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 3.0);
+            gl_FragColor = vec4(uColor * (0.5 + f), uBase + f * 0.55 * uGlow); }`,
+        transparent: true, side: THREE.DoubleSide,
+        polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4,
+      }),
+    };
+    this.body.add(W.group);
+
+    const build = (part, parent, lineMat) => {
+      const g = new THREE.Group();
+      if (part.lines) {
+        const ls = new THREE.LineSegments(geo(part.lines), lineMat);
+        ls.renderOrder = 1; g.add(ls); W.lines += part.lines.ni / 2;
+      }
+      if (part.mesh) {
+        const mg = geo(part.mesh); mg.computeVertexNormals();
+        const m = new THREE.Mesh(mg, W.occMat);
+        m.renderOrder = -1; g.add(m);                    // occluder draws before the lines
+      }
+      parent.add(g);
+      W.parts[part.name] = g;
+      return g;
+    };
+
+    this.wheelR = H.wheelRadius || WHEEL_R;
+    const pivots = {};
+    for (const k of ['fl', 'fr', 'rl', 'rr']) {
+      const o = H.wheels[k];
+      const pivot = new THREE.Group(); pivot.position.set(o[0], o[1], o[2]);
+      const spin = new THREE.Group(); pivot.add(spin);
+      this.root.add(pivot); W.pivots.push(pivot);
+      pivots[k] = { pivot, spin };
+    }
+    for (const part of H.parts) {
+      const [kind, k] = part.name.split('_');
+      if (kind === 'wheel') build(part, pivots[k].spin, W.lineMat);
+      else if (kind === 'caliper') build(part, pivots[k].pivot, W.lineMat);   // steers, doesn't spin
+      else build(part, W.group, { glass: W.glassMat, head: W.headMat, tail: W.tailMat }[kind] || W.lineMat);
+    }
+
+    // swap the built-in car out
+    for (const w of Object.values(this.wheels)) if (w.builtin) w.pivot.visible = false;
+    for (const k of ['fl', 'fr', 'rl', 'rr']) this.wheels[k] = { ...pivots[k], anchor: new THREE.Vector3(), builtin: false };
+    this.builtin.visible = false;
+    this.lightGroup.visible = false;
+    // far more lines than the built-in car: tone the bloom down so it glows instead of smearing
+    this.bloom.strength = 0.45; this.bloom.radius = 0.35; this.bloom.threshold = 0.2;
+    this.setWireOptions(this.wireOpts);
+    this.modelInfo = `Impreza sedan · ${H.detail} detail · ${Math.round(W.lines / 1000)}k lines`;
+    return true;
+  }
+
+  _wireLineMat(opacity) {
+    const m = new THREE.LineBasicMaterial({ color: this.accent.clone(), transparent: true, opacity });
+    this.lineMats.push(m);
+    return m;
+  }
+
+  _disposeWire() {
+    const W = this.wire;
+    if (!W) return;
+    const kill = o => o.traverse(n => { if (n.geometry) n.geometry.dispose(); });
+    kill(W.group); this.body.remove(W.group);
+    for (const p of W.pivots) { kill(p); this.root.remove(p); }
+    this.lineMats = this.lineMats.filter(m => m !== W.lineMat && m !== W.glassMat);
+    for (const m of [W.lineMat, W.glassMat, W.headMat, W.tailMat, W.occMat]) m.dispose();
+    this.wire = null;
+  }
+
+  // opts: { style: 'solid'|'xray', glow, lights, wheels, glass }
+  setWireOptions(opts) {
+    Object.assign(this.wireOpts, opts);
+    const W = this.wire;
+    if (!W) return;
+    const o = this.wireOpts, solid = o.style !== 'xray';
+    W.occMat.depthWrite = solid;                       // solid: body hides the lines behind it
+    W.occMat.uniforms.uBase.value = solid ? 0 : 0.035;  // x-ray: faint see-through fill
+    W.occMat.uniforms.uGlow.value = o.glow ? (solid ? 1 : 0.6) : 0;
+    W.occMat.needsUpdate = true;
+    W.lineMat.opacity = solid ? 0.95 : 0.6;
+    W.glassMat.opacity = solid ? 0.6 : 0.4;
+    const show = (name, on) => { if (W.parts[name]) W.parts[name].visible = on; };
+    show('glass', o.glass);
+    for (const n of ['head', 'tail']) {             // keep the solid lamp shells so the body stays closed
+      const g = W.parts[n]; if (g) for (const c of g.children) if (c.isLineSegments) c.visible = o.lights;
+    }
+    for (const p of W.pivots) p.visible = o.wheels;
   }
 
   // Optional real car model: static/models/model.json + a .glb file (see static/models/README.md)
@@ -359,7 +500,7 @@ export class Car3D {
     for (const k of ['fl', 'fr', 'rl', 'rr']) {
       const w = this.wheels[k];
       const ws = (s.wheels && s.wheels[k] != null ? s.wheels[k] : s.speed || 0) / 3.6;
-      w.spin.rotation.z -= (ws / WHEEL_R) * dt * (s.reverse ? -1 : 1);
+      w.spin.rotation.z -= (ws / this.wheelR) * dt * (s.reverse ? -1 : 1);
       if (k[0] === 'f') w.pivot.rotation.y = THREE.MathUtils.degToRad(s.steerDeg || 0);
     }
 
@@ -377,6 +518,11 @@ export class Car3D {
     const hl = s.highBeam ? 3.0 : s.lowBeam ? 1.8 : 0.25;
     for (const m of this.headL) m.material.color.setRGB(hl, hl, hl * 0.95);
     for (const m of this.revL) m.material.color.setRGB(s.reverse ? 2.5 : 0.1, s.reverse ? 2.5 : 0.1, s.reverse ? 2.5 : 0.1);
+    if (this.wire) {   // the model's own lamp lines: tail lights glow on brake, headlights with the beams
+      this.wire.tailMat.color.setRGB(brakeOn ? 3.2 : 0.55, brakeOn ? 0.2 : 0.04, brakeOn ? 0.3 : 0.07);
+      if (s.highBeam || s.lowBeam) this.wire.headMat.color.setRGB(hl, hl, hl * 0.95);
+      else this.wire.headMat.color.copy(this.accent);
+    }
 
     // ground + particles scroll past
     this.grid.position.x = -(this.dist % 1);

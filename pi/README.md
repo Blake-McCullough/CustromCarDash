@@ -55,6 +55,13 @@ python3 dash_server.py --cursor   # show the mouse pointer (or add ?cursor to th
 
 ## Settings (⚙ bottom right)
 - **Theme:** Red, WR Blue, Ice, Matrix, Gold, Neon, Synth or Mono.
+- **Car:**
+  - **Model:** IMPREZA (the bundled 2012 sedan wireframe, default), CUSTOM (your own .glb, only shown
+    when `static/models/model.json` exists) or BASIC (the simple built-in shape). Changing it reloads the page.
+  - **Style:** SOLID hides the lines on the far side of the car. X-RAY shows every line through the body.
+  - **Detail:** HIGH (about 120k lines) or LOW (about 66k lines, lighter on the Pi).
+  - **Edge glow:** the soft outline glow around the body.
+  - **Show:** turn the light, wheel and glass lines on or off.
 - **Graphics:** glow effects high/low, auto-lower when the frame rate drops, particles on/off.
 - **Shift lights:** where the lights start flashing, and the redline.
 - **Reset:** trip, best 0–100, peak G, or all settings.
@@ -66,9 +73,12 @@ Settings are saved on the Pi in `settings.json`, so they survive reboots.
 The 3D car, glow, grid, G-meter and highlights all follow the theme. Warning colours
 (brake, slip, check engine, redline) stay red.
 
-## Using a real car model
-See `static/models/README.md`. Drop in a .glb file and a small `model.json`, and the dash renders it
-in the same glowing wireframe style, with spinning and steering wheels if the wheels are separate objects.
+## The 3D car
+The dash ships with a wireframe of a 2012 Impreza sedan (`static/models/impreza_high.bin.gz` and
+`impreza_low.bin.gz`). Its wheels spin at the measured wheel speeds and the fronts steer, the tail-light
+lines glow when you brake, and the headlight lines glow with low/high beam.
+To use a different model, see `static/models/README.md` (CUSTOM in Settings), or `tools/model_export`
+to rebuild the bundled files from an OBJ.
 
 ## Preview on your Windows PC (no Pi needed)
 1. Install Python from python.org (tick **Add python.exe to PATH**).
@@ -84,6 +94,7 @@ except after editing `signals.json` or `dash_server.py`.
 ## Notes
 - Steering ratio and the wheel-slip threshold are at the top of `static/app.js`.
 - Glow effects drop to LOW automatically if the frame rate falls below 30 (switch this off in ⚙ Settings).
+  If it is still below 25 after that, the car drops to LOW detail for that drive (not saved).
 - Camera: tap AUTO/ORBIT/CHASE/SIDE/FRONT/TOP, or drag the car to orbit it.
 - Boot: the dash should be up roughly 8–12 s after power. Chromium runs with a fresh profile in RAM
   each boot, so cutting power can't corrupt it.

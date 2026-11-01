@@ -114,9 +114,19 @@
 
   <!-- ============ SETTINGS ============ -->
   <section id="v-settings" class="view">
-    <div class="card sblock theme">
-      <div class="label">THEME</div>
-      <div class="tgrid2" id="tgrid"></div>
+    <div class="scol">
+      <div class="card sblock theme">
+        <div class="label">THEME</div>
+        <div class="tgrid2" id="tgrid"></div>
+      </div>
+      <div class="card sblock carcard">
+        <div class="label">CAR</div>
+        <div class="opt"><span>Model</span><div class="seg2" id="o-model"><button data-v="impreza">IMPREZA</button><button data-v="custom">CUSTOM</button><button data-v="basic">BASIC</button></div></div>
+        <div class="opt caronly"><span>Style</span><div class="seg2" id="o-style"><button data-v="solid">SOLID</button><button data-v="xray">X-RAY</button></div></div>
+        <div class="opt caronly"><span>Detail</span><div class="seg2" id="o-detail"><button data-v="high">HIGH</button><button data-v="low">LOW</button></div></div>
+        <div class="opt caronly"><span>Edge glow</span><div class="seg2" id="o-glow"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
+        <div class="opt caronly"><span>Show</span><div class="seg2 multi"><button id="o-lights">LIGHTS</button><button id="o-wheels">WHEELS</button><button id="o-glass">GLASS</button></div></div>
+      </div>
     </div>
     <div class="scol">
       <div class="card sblock">
