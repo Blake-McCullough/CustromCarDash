@@ -38,6 +38,8 @@ const store = {
 CFG.redline = store.get('redline', CFG.redline);
 CFG.shiftAt = store.get('shiftAt', CFG.shiftAt);
 CFG.mass = store.get('mass', CFG.mass);
+CFG.bright = store.get('bright', 100);
+CFG.brightNight = store.get('brightNight', 40);
 
 // ---------------------------------------------------------------- state
 let meta = {};
@@ -212,6 +214,9 @@ function renderSettings() {
   pick('o-gears', String(gearCount), v => { gearCount = +v; store.set('gearCount', gearCount); renderSettings(); });
   seg('o-learn', store.get('gearLearn', true), v => { store.set('gearLearn', v); renderSettings(); });
   const ord = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
+  seg('o-brightauto', store.get('brightAuto', false), v => { store.set('brightAuto', v); applyBrightness(true); renderSettings(); });
+  $('brightinfo').textContent = brightInfo();
+  renderLogList();
   $('gearcal').textContent = gearCal.slice(0, gearCount).map((r, i) => `${ord[i]} ${Math.round(r)}`).join(' · ') + '  rpm per km/h';
   renderSysinfo();
 }
@@ -222,6 +227,7 @@ document.querySelectorAll('.step').forEach(st => {
     CFG[k] = clamp(CFG[k] + d * step, +st.dataset.min, +st.dataset.max);
     if (CFG.shiftAt > CFG.redline) { if (k === 'shiftAt') CFG.redline = CFG.shiftAt; else CFG.shiftAt = CFG.redline; }
     store.set('redline', CFG.redline); store.set('shiftAt', CFG.shiftAt); store.set('mass', CFG.mass);
+    store.set('bright', CFG.bright); store.set('brightNight', CFG.brightNight); applyBrightness(true);
     buildSegs(); LANES[0].max = CFG.rpmMax; renderSettings();
   };
   minus.onclick = () => bump(-1);
@@ -253,6 +259,81 @@ function renderSysinfo() {
   $('sysinfo').innerHTML = rows.map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join('');
 }
 setInterval(renderSysinfo, 1000);
+
+// ---------------------------------------------------------------- display brightness
+let brightMethod = 'software', brightNow = null;
+async function fetchBrightMethod() {
+  try { brightMethod = (await (await fetch('/api/brightness')).json()).method; } catch { /* keep software */ }
+  applyBrightness(true);
+}
+function brightInfo() {
+  return { backlight: 'Using the screen backlight', ddc: 'Using the monitor backlight (DDC/CI)',
+           software: 'Software dimming (this screen\'s backlight can\'t be controlled by the Pi; use its own buttons for more)' }[brightMethod];
+}
+function applyBrightness(force) {
+  const night = store.get('brightAuto', false) && (V.low_beam === 1 || V.high_beam === 1);
+  const pct = night ? CFG.brightNight : CFG.bright;
+  if (!force && pct === brightNow) return;
+  brightNow = pct;
+  if (brightMethod === 'software') {
+    $('dim').style.opacity = String(Math.min(0.9, 1 - pct / 100));
+  } else {
+    $('dim').style.opacity = '0';
+    fetch('/api/brightness', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pct }) }).catch(() => {});
+  }
+}
+fetchBrightMethod();
+setTimeout(fetchBrightMethod, 20000);         // DDC detection on the Pi can take a few seconds
+setInterval(() => applyBrightness(false), 1000);
+
+// ---------------------------------------------------------------- CAN bus logging
+const MARKS = ['MARK', 'IDLE', 'REV', 'BRAKE', 'CLUTCH', 'HANDBRAKE', 'STEER L', 'STEER R', 'CENTRE',
+  'N', '1', '2', '3', '4', '5', '6', 'R', 'LOW BEAM', 'HIGH BEAM', 'INDIC L', 'INDIC R', 'DOOR', 'WIPERS'];
+let logOn = false, logs = [];
+for (const label of MARKS) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.onclick = () => {
+    fetch('/api/log/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }) });
+    b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 300);
+  };
+  $('marks').appendChild(b);
+}
+const kb = n => n > 1073741824 ? (n / 1073741824).toFixed(1) + ' GB' : n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
+function onLogStatus(l) {
+  const was = logOn;
+  logOn = l.on;
+  $('c-rec').classList.toggle('on', l.on);
+  $('logbtn').classList.toggle('on', l.on);
+  $('logbtn').innerHTML = l.on ? '&#9632; STOP' : '&#9679; RECORD';
+  $('marks').classList.toggle('off', !l.on);
+  setText('logstat', l.on ? `Recording ${fmtTime(l.secs)} · ${l.frames.toLocaleString()} frames · ${l.marks} markers`
+    : l.reason ? `Stopped: ${l.reason}` : 'Not recording. Logs save to the Pi (pi/logs).');
+  if (was !== l.on) refreshLogs();
+}
+$('logbtn').onclick = () => fetch('/api/log/' + (logOn ? 'stop' : 'start'), { method: 'POST' }).then(refreshLogs);
+async function refreshLogs() {
+  try { const r = await (await fetch('/api/logs')).json(); logs = r.logs; $('loghint').textContent =
+    `${logs.length} logs · ${kb(r.free)} free · to download, open http://${location.hostname === '127.0.0.1' || location.hostname === 'localhost' ? '<pi-name>.local' : location.hostname}:${location.port || 80} on your phone or PC`; }
+  catch { logs = []; }
+  renderLogList();
+}
+function renderLogList() {
+  const el = $('loglist');
+  if (!logs.length) { el.innerHTML = '<div class="lrow"><span>No logs yet. Record from the BUS tab.</span></div>'; return; }
+  el.innerHTML = logs.map(l => {
+    const m = l.name.match(/can_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})/);
+    const when = m ? `${m[3]}/${m[2]} ${m[4]}:${m[5]}` : l.name;
+    return `<div class="lrow"><span><b>${when}</b> · ${kb(l.bytes)} · ${l.marks} marks</span>` +
+      `<a href="/logs/${l.name}.zip" download>ZIP</a><button data-del="${l.name}">&#10005;</button></div>`;
+  }).join('');
+  el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    if (b.dataset.armed) {
+      fetch('/api/log/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: b.dataset.del }) }).then(refreshLogs);
+    } else { b.dataset.armed = 1; b.textContent = 'DELETE?'; setTimeout(() => { delete b.dataset.armed; b.innerHTML = '&#10005;'; }, 3000); }
+  });
+}
+refreshLogs();
 applyFx(false);
 
 
@@ -325,6 +406,7 @@ function onMsg(m) {
   lastMsg = now;
   V = m.v || {};
   source = m.source;
+  if (m.log) onLogStatus(m.log);
   OBD = m.obd || null;
   $('fps').textContent = m.fps.toLocaleString();
   $('nids').textContent = m.nids;

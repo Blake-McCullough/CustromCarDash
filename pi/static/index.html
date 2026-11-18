@@ -21,6 +21,7 @@
     <span class="chip" id="c-cruise">CRUISE</span>
     <span class="chip warn" id="c-vdc">VDC OFF</span>
     <span class="chip bad" id="c-mil">CHECK ENG</span>
+    <span class="chip bad" id="c-rec">&#9679; REC</span>
   </div>
   <div class="spacer"></div>
   <span id="src" class="pill">…</span>
@@ -149,6 +150,18 @@
         <div class="opt"><span>Car + driver (kg)</span><div class="step" data-k="mass" data-step="25" data-min="900" data-max="2500"><button>&minus;</button><b></b><button>+</button></div></div>
       </div>
       <div class="card sblock">
+        <div class="label">DISPLAY</div>
+        <div class="opt"><span>Brightness</span><div class="step" data-k="bright" data-step="10" data-min="10" data-max="100"><button>&minus;</button><b></b><button>+</button></div></div>
+        <div class="opt"><span>Night brightness</span><div class="step" data-k="brightNight" data-step="10" data-min="10" data-max="100"><button>&minus;</button><b></b><button>+</button></div></div>
+        <div class="opt"><span>Dim when headlights on</span><div class="seg2" id="o-brightauto"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
+        <div class="opt"><span class="dim" id="brightinfo"></span></div>
+      </div>
+      <div class="card sblock">
+        <div class="label">CAN LOGS</div>
+        <div class="loglist" id="loglist"></div>
+        <div class="opt"><span class="dim" id="loghint"></span></div>
+      </div>
+      <div class="card sblock">
         <div class="label">RESET</div>
         <div class="resets">
           <button id="r-trip">TRIP</button><button id="r-zt">0–100 BEST</button><button id="r-g">G PEAK</button><button id="r-pwr">POWER PEAK</button><button id="r-gears">GEAR RATIOS</button><button id="r-all">ALL SETTINGS</button>
@@ -173,6 +186,11 @@
   <section id="v-bus" class="view">
     <div class="card buswrap">
       <div class="rowsplit"><div class="label">CAN BUS · EVERY ID</div><div class="dim">bytes flash red when they change · do one thing at a time in the car and watch</div></div>
+      <div class="logbar">
+        <button id="logbtn" class="recbtn">&#9679; RECORD</button>
+        <span class="dim" id="logstat">Not recording. Logs save to the Pi (pi/logs).</span>
+      </div>
+      <div class="marks" id="marks"></div>
       <div class="tbl"><table><thead><tr><th>ID</th><th class="r">HZ</th><th>DATA</th><th>DECODED AS</th></tr></thead><tbody id="busrows"></tbody></table></div>
     </div>
   </section>
@@ -187,6 +205,8 @@
   <span class="dim" id="unv"></span>
   <button data-view="settings" class="cog" title="Settings">&#9881;</button>
 </nav>
+
+<div id="dim"></div>
 
 <div id="off">
   <div class="offinner">

@@ -121,6 +121,12 @@ car CAN (500k) → RS485 CAN HAT (MCP2515) → Linux SocketCAN can0 (listen-only
   - `GET /ws`: WebSocket (protocol below)
   - `GET /api/settings`: returns `settings.json` (or `{}`)
   - `POST /api/settings`: replaces `settings.json` (atomic write via `.tmp` + `os.replace`)
+  - `POST /api/log/start|stop|mark|delete`, `GET /api/logs`, `GET /logs/<name>.zip`: CAN bus recording
+    (`BusLogger`): every frame in `on_frame()` goes to `pi/logs/can_YYYYmmdd_HHMMSS.log.gz` (candump format,
+    gzip so a power cut leaves a readable partial file). Markers go to `.markers.csv`. The zip bundles both plus a README.
+    It stops below 300 MB free. Snapshots carry `"log": {on, name, frames, marks, secs, reason}`.
+  - `GET/POST /api/brightness`: `Brightness` uses `/sys/class/backlight` if writable, else `ddcutil` (DDC/CI,
+    probed at startup), else reports `software` and the page dims itself with the `#dim` overlay.
   - `/static/*`: frontend. A middleware adds `Cache-Control: no-cache` so edits show on refresh.
 
 ### 4.2 WebSocket protocol (`/ws`)
@@ -168,7 +174,7 @@ restart the backend. The frontend accesses signals **by name**, so renaming a si
   `store.set(k, v)` (debounced POST). Settings live on the backend, not in localStorage, because the
   kiosk Chromium starts with a fresh profile in `/tmp` every boot.
   Keys: `theme`, `fx`, `autofx`, `particles`, `redline`, `shiftAt`, `cam`, `zt_best`, `mass`,
-  `gearMode`, `gearCount`, `gearLearn`, `gearCal`, plus the car-display keys.
+  `gearMode`, `gearCount`, `gearLearn`, `gearCal`, `bright`, `brightNight`, `brightAuto`, plus the car-display keys.
 - **`CFG`:** `redline` (6500), `shiftAt` (6000), `rpmMax` (= max(7000, redline+500)), `steerRatio` (15:
   steering wheel deg → road wheel deg for the 3D front wheels), `slipPct` (8: wheel-speed deviation
   flagged as slip).
@@ -237,7 +243,7 @@ restart the backend. The frontend accesses signals **by name**, so renaming a si
   `dtparam=spi=on`, `dtoverlay=mcp2515-can0,oscillator=${OSC:-12000000},interrupt=25,spimaxfrequency=2000000`.
   The crystal is 12 MHz on current HATs; set `OSC=8000000` if the HAT's crystal says 8.000.
 - `can0.service`: `ip link set can0 up type can bitrate 500000 listen-only on restart-ms 100`.
-- `impreza-dash.service`: runs `dash_server.py` as the user (with `--demo` if installed with `DEMO=1`).
+- `impreza-dash.service`: runs `dash_server.py --host 0.0.0.0` (reachable from phones/PCs on the LAN, for log downloads) as the user (with `--demo` if installed with `DEMO=1`).
 - Console autologin on tty1. `~/.bash_profile` execs `kiosk.sh` → waits for the backend → runs
   `cage -s -- chromium --kiosk http://127.0.0.1:8080` with a fresh `--user-data-dir=/tmp/dash-chromium`.
 - Boot speed: quiet cmdline, `boot_delay=0`, disables wait-online, apt timers and other unneeded services.

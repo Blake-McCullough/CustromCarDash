@@ -55,6 +55,28 @@ Only re-run `setup_pi.sh` if the installer itself changed.
 - If the screen shows the wrong resolution, add `video=HDMI-A-1:1024x600@60` (your screen's
   resolution) to the end of the single line in `/boot/firmware/cmdline.txt`, then reboot.
 
+## Recording the CAN bus (to share for decoding)
+1. Open the **BUS** tab and tap **● RECORD**. A red **● REC** shows in the header while it runs.
+2. Do one thing at a time, and tap the matching **marker** button just before each one: IDLE, REV,
+   BRAKE, CLUTCH, STEER L/R, gears N/1–6/R, lights, indicators and so on.
+3. Tap **■ STOP**.
+4. Get the file off the Pi, either way:
+   - **From your phone or PC** on the same Wi-Fi: open `http://<pi-name>.local:8080` (e.g. `http://pidash.local:8080`),
+     then ⚙ → **CAN LOGS** → **ZIP**. The zip holds the log, the markers and a README.
+   - **Or copy the folder:** `scp -r <user>@<pi-name>.local:~/CustromCarDash/pi/logs .`
+5. Send the zip to whoever is decoding it (e.g. upload it to Claude).
+
+Logs are saved in `pi/logs/` (not committed to git) in candump format, gzip-compressed (roughly
+3–6 MB per 10 minutes). Recording stops automatically if the Pi gets below 300 MB free.
+
+## Display brightness
+⚙ → **DISPLAY**: brightness, a separate night brightness, and *Dim when headlights on*.
+- Official/DSI touch screens: the dash controls the real backlight.
+- HDMI monitors that support DDC/CI: the dash controls the backlight through `ddcutil` (detected at startup).
+- Most small HDMI screens support neither. The dash then dims the picture in software, and the screen's own
+  buttons set the maximum. The settings page shows which method is in use.
+- *Dim when headlights on* uses the `low_beam`/`high_beam` signals, so it only works once those are verified.
+
 ## Gear and wheel power (calculated)
 A 2013 Impreza doesn't report either over OBD-II, so the dash calculates them:
 - **Gear:** engine rpm ÷ speed, matched to each gear's ratio. It starts with approximate ratios and

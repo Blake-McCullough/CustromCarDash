@@ -13,11 +13,19 @@ Open http://localhost:8080
 """
 import argparse
 import asyncio
+import glob
+import gzip
+import io
 import json
 import math
 import os
 import random
+import re
+import shutil
+import subprocess
 import time
+import zipfile
+from datetime import datetime
 from pathlib import Path
 
 from aiohttp import web, WSMsgType
@@ -201,6 +209,140 @@ def fake_ecu(state):
     return send
 
 
+# ---------------------------------------------------------------- bus logging
+LOG_DIR = HERE / "logs"
+LOG_MIN_FREE = 300 * 1024 * 1024        # stop recording below 300 MB free
+
+
+class BusLogger:
+    """Records every CAN frame to logs/can_<date>_<time>.log.gz in candump format
+    "(unix_time) can0 ID#DATA" (readable by can-utils, SavvyCAN, python-can, cantools).
+    Markers go to a matching .markers.csv. gzip is used because a partial .gz from a power cut
+    still decompresses up to the cut."""
+
+    def __init__(self):
+        self.f = None
+        self.mk = None
+        self.name = ""
+        self.frames = 0
+        self.marks = 0
+        self.t0 = 0.0
+        self.last_check = 0.0
+        self.stopped_reason = ""
+
+    @property
+    def on(self):
+        return self.f is not None
+
+    def start(self):
+        if self.on:
+            return
+        LOG_DIR.mkdir(exist_ok=True)
+        if shutil.disk_usage(LOG_DIR).free < LOG_MIN_FREE:
+            self.stopped_reason = "not enough free space"
+            return
+        self.name = "can_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.f = gzip.open(LOG_DIR / f"{self.name}.log.gz", "wt", compresslevel=4, newline="\n")
+        self.mk = open(LOG_DIR / f"{self.name}.markers.csv", "w", newline="\n")
+        self.mk.write("unix_time,seconds_from_start,label\n")
+        self.frames = self.marks = 0
+        self.t0 = time.time()
+        self.stopped_reason = ""
+
+    def stop(self, reason=""):
+        if not self.on:
+            return
+        self.f.close()
+        self.mk.close()
+        self.f = self.mk = None
+        self.stopped_reason = reason
+
+    def write(self, arb_id, data, ext=False):
+        t = time.time()
+        idf = f"{arb_id:08X}" if (ext or arb_id > 0x7FF) else f"{arb_id:03X}"
+        self.f.write(f"({t:.6f}) can0 {idf}#{bytes(data).hex().upper()}\n")
+        self.frames += 1
+        if t - self.last_check > 10:                     # periodic flush + disk check
+            self.last_check = t
+            self.f.flush()
+            if shutil.disk_usage(LOG_DIR).free < LOG_MIN_FREE:
+                self.stop("disk nearly full")
+
+    def mark(self, label):
+        if not self.on:
+            return False
+        t = time.time()
+        self.marks += 1
+        label = re.sub(r"[\r\n,]", " ", str(label))[:60] or f"mark {self.marks}"
+        self.mk.write(f"{t:.6f},{t - self.t0:.3f},{label}\n")
+        self.mk.flush()
+        return True
+
+    def status(self):
+        return {"on": self.on, "name": self.name, "frames": self.frames, "marks": self.marks,
+                "secs": round(time.time() - self.t0) if self.on else 0, "reason": self.stopped_reason}
+
+
+def list_logs():
+    out = []
+    for p in sorted(LOG_DIR.glob("can_*.log.gz"), reverse=True):
+        base = p.name[:-len(".log.gz")]
+        mk = LOG_DIR / f"{base}.markers.csv"
+        try:
+            marks = max(0, sum(1 for _ in open(mk)) - 1) if mk.exists() else 0
+        except OSError:
+            marks = 0
+        out.append({"name": base, "bytes": p.stat().st_size, "marks": marks})
+    return out
+
+
+# ---------------------------------------------------------------- display brightness
+class Brightness:
+    """Real backlight if the Pi can control it (DSI panels: /sys/class/backlight; HDMI monitors
+    that support DDC/CI: ddcutil). Otherwise the page dims itself in software."""
+
+    def __init__(self):
+        self.method = "software"
+        self.path = None
+        self.max = 100
+        self._pending = None
+        self._busy = False
+        for b in glob.glob("/sys/class/backlight/*"):
+            br = Path(b) / "brightness"
+            if os.access(br, os.W_OK):
+                self.method, self.path = "backlight", br
+                self.max = int((Path(b) / "max_brightness").read_text().strip() or 255)
+                return
+
+    async def probe_ddc(self):
+        if self.method != "software" or not shutil.which("ddcutil"):
+            return
+        try:
+            r = await asyncio.to_thread(subprocess.run, ["ddcutil", "getvcp", "10", "--brief"],
+                                        capture_output=True, text=True, timeout=15)
+            if r.returncode == 0 and "VCP 10" in r.stdout:
+                self.method = "ddc"
+        except Exception:
+            pass
+
+    async def set(self, pct):
+        pct = max(5, min(100, int(pct)))
+        if self.method == "backlight":
+            self.path.write_text(str(round(self.max * pct / 100)))
+        elif self.method == "ddc":
+            self._pending = pct                          # ddcutil is slow: only apply the latest value
+            if not self._busy:
+                self._busy = True
+                try:
+                    while self._pending is not None:
+                        v, self._pending = self._pending, None
+                        await asyncio.to_thread(subprocess.run, ["ddcutil", "setvcp", "10", str(v), "--noverify"],
+                                                capture_output=True, timeout=10)
+                finally:
+                    self._busy = False
+        return self.method
+
+
 # ---------------------------------------------------------------- state
 class BusState:
     def __init__(self, sigs, by_id):
@@ -220,6 +362,7 @@ class BusState:
         self.obd_win = 0
         self.meta_ver = 0
         self.sim = {}                   # demo: current simulated values (for the fake ECU)
+        self.logger = BusLogger()
 
     def obd_supported_raw(self):
         out = set()
@@ -249,7 +392,9 @@ class BusState:
         self.obd_win += 1
         self.obd["resp"] += 1
 
-    def on_frame(self, arb_id, data, now):
+    def on_frame(self, arb_id, data, now, ext=False):
+        if self.logger.f is not None:
+            self.logger.write(arb_id, data, ext)
         e = self.ids.get(arb_id)
         if e is None:
             e = self.ids[arb_id] = {"data": b"", "win": 0, "hz": 0, "changed": [0.0] * 8}
@@ -287,6 +432,7 @@ class BusState:
             "link": (now - self.last_frame) < LINK_TIMEOUT,
             "v": self.values,
             "obd": self.obd,
+            "log": self.logger.status(),
         }
         if with_bus:
             out["ids"] = [[f"{i:03X}" if i <= 0x7FF else f"{i:08X}",
@@ -331,7 +477,7 @@ async def live_source(state, channel, obd=False):
             async for msg in reader:
                 if msg.is_error_frame or msg.is_remote_frame:
                     continue
-                state.on_frame(msg.arbitration_id, msg.data, time.monotonic())
+                state.on_frame(msg.arbitration_id, msg.data, time.monotonic(), msg.is_extended_id)
         except Exception as ex:
             state.error = f"{channel}: {ex}"
         finally:
@@ -476,6 +622,62 @@ async def ws_handler(request):
 SETTINGS_FILE = HERE / "settings.json"
 
 
+async def log_api(request):
+    st, act = request.app["state"], request.match_info["action"]
+    lg = st.logger
+    if act == "start":
+        lg.start()
+    elif act == "stop":
+        lg.stop()
+    elif act == "mark":
+        body = await request.json() if request.can_read_body else {}
+        if not lg.mark(body.get("label", "")):
+            return web.json_response({"ok": False, "error": "not recording"}, status=409)
+    elif act == "delete":
+        body = await request.json()
+        base = str(body.get("name", ""))
+        if not re.fullmatch(r"can_\d{8}_\d{6}", base) or (lg.on and lg.name == base):
+            return web.json_response({"ok": False}, status=400)
+        for suffix in (".log.gz", ".markers.csv"):
+            (LOG_DIR / f"{base}{suffix}").unlink(missing_ok=True)
+    return web.json_response({"ok": True, "status": lg.status(), "logs": list_logs()})
+
+
+async def log_list(request):
+    return web.json_response({"status": request.app["state"].logger.status(), "logs": list_logs(),
+                              "free": shutil.disk_usage(HERE).free})
+
+
+async def log_download(request):
+    """One zip per recording: the .log.gz plus its markers, ready to share."""
+    base = request.match_info["name"]
+    st = request.app["state"]
+    if not re.fullmatch(r"can_\d{8}_\d{6}", base) or not (LOG_DIR / f"{base}.log.gz").exists():
+        raise web.HTTPNotFound()
+    if st.logger.on and st.logger.name == base:
+        st.logger.f.flush()
+        st.logger.mk.flush()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
+        z.write(LOG_DIR / f"{base}.log.gz", f"{base}.log.gz")
+        mk = LOG_DIR / f"{base}.markers.csv"
+        if mk.exists():
+            z.write(mk, f"{base}.markers.csv")
+        z.writestr("README.txt", "CAN bus log from the Impreza dash.\n"
+                   f"{base}.log.gz: candump format '(unix_time) can0 ID#DATA', 500 kbit/s, one frame per line.\n"
+                   f"{base}.markers.csv: what was being done at each moment (tapped during the recording).\n")
+    return web.Response(body=buf.getvalue(), content_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{base}.zip"'})
+
+
+async def brightness_api(request):
+    br = request.app["bright"]
+    if request.method == "POST":
+        body = await request.json()
+        await br.set(body.get("pct", 100))
+    return web.json_response({"method": br.method})
+
+
 async def get_settings(request):
     try:
         data = json.loads(SETTINGS_FILE.read_text())
@@ -531,15 +733,22 @@ def main():
     sigs, by_id = load_signals(args.signals)
     app = web.Application(middlewares=[no_cache])
     app["state"] = BusState(sigs, by_id)
+    app["bright"] = Brightness()
     app["clients"] = {}
     app["cursor"] = args.cursor
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/api/settings", get_settings)
     app.router.add_post("/api/settings", post_settings)
+    app.router.add_post("/api/log/{action:start|stop|mark|delete}", log_api)
+    app.router.add_get("/api/logs", log_list)
+    app.router.add_get("/logs/{name}.zip", log_download)
+    app.router.add_get("/api/brightness", brightness_api)
+    app.router.add_post("/api/brightness", brightness_api)
     app.router.add_static("/static", HERE / "static")
 
     async def start_bg(app):
+        asyncio.create_task(app["bright"].probe_ddc())
         st = app["state"]
         if args.obd:
             st.obd["status"] = "starting"
@@ -547,6 +756,7 @@ def main():
         app["tasks"] = [asyncio.create_task(c) for c in (src, rate_task(st), push_task(app))]
 
     async def stop_bg(app):
+        app["state"].logger.stop("server stopped")
         for t in app["tasks"]:
             t.cancel()
 

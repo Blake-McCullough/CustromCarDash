@@ -190,3 +190,22 @@ html.showcursor button, html.showcursor #c3d { cursor: pointer !important; }
 
 .resets { grid-template-columns: repeat(3, 1fr) !important; }
 #gearcal { font-size: calc(var(--u) * 1.5); letter-spacing: .06em; }
+
+/* bus logging */
+.logbar { display: flex; align-items: center; gap: calc(var(--u) * 1.6); }
+.recbtn { background: #0a0b0e; color: var(--red); border: 2px solid var(--red); border-radius: 4px; font-weight: 800;
+  padding: calc(var(--u) * 1.1) calc(var(--u) * 2.4); font-size: calc(var(--u) * 1.8); letter-spacing: .14em; }
+.recbtn.on { background: var(--red); color: #fff; animation: recpulse 1s infinite; }
+@keyframes recpulse { 50% { opacity: .6; } }
+.marks { display: flex; flex-wrap: wrap; gap: calc(var(--u) * .6); }
+.marks button { background: #0a0b0e; color: var(--fg); border: 1px solid var(--line); border-radius: 3px;
+  padding: calc(var(--u) * .9) calc(var(--u) * 1.4); font-size: calc(var(--u) * 1.5); letter-spacing: .1em; }
+.marks button:active, .marks button.hit { background: var(--acc); color: var(--bg); border-color: var(--acc); }
+.marks.off button { opacity: .3; pointer-events: none; }
+.loglist { display: flex; flex-direction: column; font-size: calc(var(--u) * 1.6); max-height: calc(var(--u) * 26); overflow: auto; }
+.loglist .lrow { display: flex; align-items: center; gap: calc(var(--u) * 1.2); padding: calc(var(--u) * .6) 0; border-bottom: 1px solid #16191d; }
+.loglist .lrow span { flex: 1; color: var(--dim); }
+.loglist .lrow span b { color: var(--fg); font-weight: 600; }
+.loglist a { color: var(--acc); text-decoration: none; border: 1px solid var(--line); padding: calc(var(--u) * .5) calc(var(--u) * 1.2); border-radius: 3px; }
+.loglist button { background: #0a0b0e; color: var(--dim); border: 1px solid var(--line); padding: calc(var(--u) * .5) calc(var(--u) * 1.2); border-radius: 3px; }
+#dim { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 50; transition: opacity .6s; }

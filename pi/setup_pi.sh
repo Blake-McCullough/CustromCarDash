@@ -22,7 +22,7 @@ echo "==> Installing for user '$USER_NAME', dash in $PI_DIR (CAN crystal ${OSC} 
 
 # ------------------------------------------------------------------ packages
 apt-get update
-apt-get install -y python3-can python3-aiohttp can-utils cage curl
+apt-get install -y python3-can python3-aiohttp can-utils cage curl ddcutil
 if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
   apt-get install -y chromium || apt-get install -y chromium-browser
 fi
@@ -85,7 +85,7 @@ After=local-fs.target
 [Service]
 User=$USER_NAME
 WorkingDirectory=$PI_DIR
-ExecStart=/usr/bin/python3 $PI_DIR/dash_server.py $EXTRA
+ExecStart=/usr/bin/python3 $PI_DIR/dash_server.py --host 0.0.0.0 $EXTRA
 Restart=always
 RestartSec=1
 Nice=-5
@@ -96,6 +96,14 @@ EOF
 
 systemctl daemon-reload
 systemctl enable can0.service impreza-dash.service
+
+# ------------------------------------------------------------------ display brightness
+# DSI screens: let the dash write the backlight. HDMI monitors with DDC/CI: needs i2c-dev.
+cat > /etc/udev/rules.d/99-impreza-backlight.rules <<'EOF'
+SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness"
+EOF
+echo i2c-dev > /etc/modules-load.d/i2c-dev.conf
+getent group i2c >/dev/null && usermod -aG i2c "$USER_NAME"
 
 # ------------------------------------------------------------------ kiosk on tty1
 chmod +x "$PI_DIR/kiosk.sh"
@@ -126,3 +134,4 @@ echo
 echo "==> Done. Reboot to start the dash:  sudo reboot"
 echo "    After reboot, check CAN with:     ip -details link show can0   and   candump can0"
 echo "    Backend logs:                     journalctl -u impreza-dash -f"
+echo "    From your phone/PC on the same Wi-Fi: http://$(hostname).local:8080  (CAN logs: Settings > CAN LOGS > ZIP)"

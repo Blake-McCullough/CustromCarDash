@@ -4,3 +4,4 @@ build/
 # personal dash settings saved by the Pi
 pi/settings.json
 pi/settings.tmp
+pi/logs/
