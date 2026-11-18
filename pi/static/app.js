@@ -64,7 +64,21 @@ const zt = { state: 'idle', t0: 0, run: null, best: store.get('zt_best', null) }
 
 // ---------------------------------------------------------------- UI setup
 let AUTO_FX = store.get('autofx', true) && !new URLSearchParams(location.search).has('keepfx');
-if (new URLSearchParams(location.search).has('cursor')) document.documentElement.classList.add('showcursor');   // ?cursor shows the mouse   // ?keepfx disables auto quality drop
+// Mouse pointer: hidden for the touch screen. Shown by ?cursor, --cursor, the Settings option,
+// or by tapping Ctrl on its own (toggles; remembered).
+let showCursor = new URLSearchParams(location.search).has('cursor') || document.documentElement.classList.contains('showcursor')
+  || store.get('cursor', false);
+function applyCursor(save) {
+  document.documentElement.classList.toggle('showcursor', showCursor);
+  if (save) store.set('cursor', showCursor);
+}
+applyCursor(false);
+let ctrlAlone = false;
+addEventListener('keydown', e => { ctrlAlone = e.key === 'Control' && !e.repeat; });
+addEventListener('keyup', e => {
+  if (e.key === 'Control' && ctrlAlone) { showCursor = !showCursor; applyCursor(true); if (view === 'settings') renderSettings(); }
+  ctrlAlone = false;
+});
 const SEGS = 35;
 const segEls = [];
 for (let i = 0; i < SEGS; i++) { const s = document.createElement('i'); $('segs').appendChild(s); segEls.push(s); }
@@ -197,6 +211,7 @@ function renderSettings() {
   const parts = store.get('particles', true);
   car.particles.visible = parts;
   seg('o-particles', parts, v => { store.set('particles', v); renderSettings(); });
+  seg('o-cursor', showCursor, v => { showCursor = v; applyCursor(true); renderSettings(); });
   // car
   pick('o-model', CAR.model, v => setCar('model', v));
   $('o-model').querySelector('[data-v="custom"]').style.display = hasCustom || CAR.model === 'custom' ? '' : 'none';
@@ -644,13 +659,20 @@ function renderBus(ids) {
 }
 
 // ---------------------------------------------------------------- power-off overlay
+// No CAN never blocks the dash: a small notice on the 3D panel, and the "powered off" trip summary
+// can be tapped away. Only a dead backend gets a full cover (nothing works without it).
+let offDismissed = false;
+$('off').addEventListener('click', () => { if (!(performance.now() - lastMsg > 3000)) { offDismissed = true; $('off').classList.remove('show'); } });
 function renderOff() {
   const stale = performance.now() - lastMsg > 3000;        // backend not answering
-  const show = !link || stale;
+  if (link) offDismissed = false;                          // next power-off shows the summary again
+  $('nocan').classList.toggle('show', !link && !stale);
+  setText('nocan-sub', everLinked ? 'Vehicle off. Everything else still works.' : 'Ignition on? Everything else still works.');
+  const show = stale || (!link && everLinked && !offDismissed);
   $('off').classList.toggle('show', show);
+  setText('off-tap', stale ? '' : 'TAP ANYWHERE TO CLOSE');
   if (!show) return;
   if (stale) { setText('off-title', 'DASH OFFLINE'); setText('off-sub', 'RECONNECTING TO BACKEND'); setText('off-lost', ''); }
-  else if (!everLinked) { setText('off-title', 'WAITING FOR CAN'); setText('off-sub', 'IGNITION ON?'); setText('off-lost', ''); }
   else { setText('off-title', 'VEHICLE POWERED OFF'); setText('off-sub', 'SYSTEM STANDBY'); setText('off-lost', trip.lostAt ? 'LINK LOST AT ' + trip.lostAt : ''); }
   setText('o-dist', trip.dist.toFixed(1) + ' KM');
   setText('o-time', Math.round(trip.start ? (performance.now() - trip.start) / 60000 : 0) + ' MIN');

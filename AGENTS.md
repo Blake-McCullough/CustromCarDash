@@ -193,6 +193,8 @@ Unverified signals get an amber "?".
   steering wheel deg → road wheel deg for the 3D front wheels), `slipPct` (8: wheel-speed deviation
   flagged as slip).
 - **URL params:** `?keepfx` disables the automatic quality drop (for testing). `?cursor` shows the mouse.
+- **Mouse pointer:** hidden by default (touch screen). Tapping **Ctrl** on its own toggles it, and so does
+  Settings > Graphics > Mouse pointer. Saved as setting `cursor`.
 - **Views** (bottom nav): `drive`, `graphs`, `engine` (OBD-II tiles), `bus`, `settings` (⚙ button). Only the active view renders.
 - **On each WS message (`onMsg`)** it updates `V` (decoded values) and the link/source pill, and computes:
   - `derive(now)` computes values that aren't on the bus and writes them into `V`:
@@ -213,8 +215,9 @@ Unverified signals get an amber "?".
     positions HTML wheel-speed labels with `car.wheelScreen()`; draws the G-meter canvas.
   - `drawGraphs()`: 4 lanes (RPM, speed, throttle+brake, steering).
   - `renderBus(ids)`: table with bytes coloured by change age, plus which signals decode from each ID.
-  - `renderOff()`: full-screen overlay for "WAITING FOR CAN", "VEHICLE POWERED OFF" (with trip
-    summary) or "DASH OFFLINE" (no WS message for 3 s).
+  - `renderOff()`: no CAN never blocks the UI. With no link there's a small `#nocan` notice on the 3D
+    panel. After a drive, "VEHICLE POWERED OFF" (trip summary) covers the screen until tapped. Only
+    "DASH OFFLINE" (no WS message for 3 s) is a permanent full cover.
   - Auto quality: if the render fps stays under 30 for 5 s on the drive view (and `autofx` is on), it
     switches the glow effects to low.
   - **Resilience:** the loop runs `renderOff()` first and wraps each part in `guard()`, so an exception

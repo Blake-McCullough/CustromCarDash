@@ -170,6 +170,10 @@ Edit any file, then press **Ctrl+F5** in the browser to see the change. No need 
 except after editing `signals.json` or `dash_server.py`.
 
 ## Notes
+- **Mouse pointer:** hidden for the touch screen. With a keyboard attached, tap **Ctrl** on its own to show or hide it
+  (or ⚙ Settings → Graphics → Mouse pointer).
+- **No CAN connected:** the dash still works (a small *NO CAN DATA* notice shows on the 3D panel), so you can use
+  Settings, logs and the other tabs with the car off.
 - Steering ratio and the wheel-slip threshold are at the top of `static/app.js`.
 - Glow effects drop to LOW automatically if the frame rate falls below 30 (switch this off in ⚙ Settings).
   If it is still below 25 after that, the car drops to LOW detail for that drive (not saved).
