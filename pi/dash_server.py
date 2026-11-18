@@ -548,7 +548,7 @@ async def demo_source(state, obd=False):
                      "timing_adv": 28 - thr * 0.15, "maf": 2.5 + rpm / 6500 * thr * 0.9, "stft": 1.6 * math.sin(now),
                      "ltft": -2.3, "fuel_level": 62, "voltage": 14.1 + 0.1 * math.sin(now / 3), "baro": 101,
                      "oil_temp": 96})
-        vals["neutral"] = 1 if gear == 0 else 0
+        vals["gear"] = gear if gear else 7          # the car sends 7 for neutral
         state.sim = vals
         frames = {}
         for name, s in state.sigs.items():

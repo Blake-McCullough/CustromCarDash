@@ -158,29 +158,33 @@ fuel_level, voltage, baro, oil_temp`. The frontend shows them on the **ENGINE** 
 ### 4.3 `signals.json`
 Each entry is `name: {id, start_byte, length, endian?, signed?, shift?, mask?, scale?, offset?, unit, verified, _note?}`.
 
-**Decoded from logs recorded on this car (2026-11-18, parked, engine running).** The car uses the 2012+ Subaru
-platform layout, **not** the 0x410/0x511-style IDs we first guessed (those IDs don't exist on this bus).
-The bus seen at the OBD port: `002 0D0 0D1 0D2 0D3 0D4 140 141 144 152 156 15A 280 281 282 360 361 370 372 374 376 378 3D1 660`.
+**Decoded from logs recorded on this car (2026-11-18: parked with markers, then a ~2 min drive up to 75 km/h).**
+The car uses the 2012+ Subaru platform layout, **not** the 0x410/0x511-style IDs we first guessed (those
+IDs don't exist on this bus). IDs at the OBD port:
+`002 0D0 0D1 0D2 0D3 0D4 140 141 144 152 156 15A 280 281 282 360 361 370 372 374 376 378 3D1 660`.
 
 | Signal | Decode | Status |
 |---|---|---|
 | throttle (accelerator pedal) | `0x140` b0 × 0.392 % | verified |
 | rpm | `0x140` b2–3 LE & 0x3FFF | verified |
-| neutral | `0x141` b6 bit1 (0x27 neutral / 0x21 in gear) | verified |
+| **gear** | `0x141` b6 & 0x07: 1–6, **7 = neutral/between gears** (the ECU's own calculation) | verified |
+| clutch (drivetrain disengaged) | `0x141` b6 bit5 (set when clutch pressed or in neutral) | verified |
+| overrun (pedal released in gear) | `0x141` b6 bit6 | verified |
 | steering | `0x0D0` b0–1 LE signed × −0.1 ° (left +) | verified |
-| brake (pressure, uncalibrated) | `0x0D1` b2 | verified |
+| yaw_rate / lat_g | `0x0D0` b2–3 LE signed × 0.2725 °/s / b6 signed × 0.0204 g (right turn = negative) | verified (physics-consistent) |
+| speed | `0x0D1` b0–1 LE × 0.05722 km/h (fitted to the wheel speeds) | verified (absolute ±~3%, no GPS check) |
+| brake (pressure, uncalibrated, ~10–20 normal stop, ~50 firm) | `0x0D1` b2 | verified |
+| wheel_fl/fr/rl/rr | `0x0D4` 4 × LE16 × 0.05747 km/h | verified |
 | brake_sw | `0x152` b6 bit4 (mirror: `0x0D3` b2 bit5) | verified |
 | handbrake | `0x152` b6 bit3 | verified |
 | low_beam / high_beam | `0x152` b7 bit3 / bit4 | verified |
 | coolant | `0x360` b3 − 40 | verified |
 | oil_temp | `0x360` b2 − 40 | likely |
-| speed | `0x0D1` b0–1 LE × 0.015625 km/h | guess (0 when parked) |
-| wheel_fl/fr/rl/rr | `0x0D4` 4 × LE16 × 0.05747 km/h | guess (0 when parked) |
-| yaw_rate, lat_g | `0x0D0` b2–3, b6 | guess |
 
-Not found on this bus: clutch switch, reverse switch, gear number, cruise, MIL, outside temp. The gear
-shown is calculated (rpm/speed, see 4.4) and forced to N by `neutral`. Next step: record a short drive to
-confirm speed/wheel speeds and calibrate brake pressure. The frontend accesses signals **by name**.
+Measured rpm per km/h in each gear: 122, 66, 45, 34, 27, 24 (`CFG.gearDefaults`). The car has 6 forward gears.
+**Reverse isn't detectable:** reversing shows 0x21 (gear 1 + clutch), the same as a slipping launch.
+Not on this bus: reverse switch, cruise, MIL, outside temperature. With the clutch in, the gear nibble
+is the ECU's prediction, so the dash shows it dimmed. The frontend accesses signals **by name**.
 Unverified signals get an amber "?".
 
 ### 4.4 Frontend: `static/app.js` (ES module, uses top-level `await`)
@@ -201,9 +205,9 @@ Unverified signals get an amber "?".
     - `accel`/`longG`: slope of a least-squares line through the last 0.8 s of speed, smoothed
     - `wheel_kw` / `wheel_kw_peak`: virtual dyno, `P = v·(m·a + ½·1.2·CdA·v² + Crr·m·g)` with `CFG.mass`
       (settings, default 1400 kg), `cda` 0.70, `crr` 0.012. Zero when throttle < 3%, clutch in, reverse or < 1.5 m/s.
-    - `gear_calc`: rpm ÷ km/h matched to `gearCal` (rpm per km/h per gear, within 7%). Defaults are approximate
-      for a 5MT on 205/55R16. Auto-learn nudges the nearest gear when the ratio is steady for 1.2 s, saved as `gearCal`.
-      The gear box shows `gear_calc` unless settings `gearMode` = `can`.
+    - `gear_calc` (fallback): rpm ÷ km/h matched to `gearCal` (defaults measured on this car), within 7%.
+      Auto-learn nudges the nearest gear when the ratio is steady for 1.2 s. The gear box shows the car's
+      own `gear` by default (`gearMode` = `can`); `calc` is a Settings option.
   - **trip:** distance (integrated speed), moving time, top speed, start time
   - **0–100 timer:** state machine `idle → armed (speed < 0.5) → run (speed > 0.8) → done at ≥100 km/h`.
     The best time is saved to settings.
@@ -316,7 +320,7 @@ and `Z`, and refuses `t/T/r/R`. On the Pi: `slcand -o -c -s6 -S 921600 /dev/ttyU
   Imported models should stay under about 100k triangles.
 
 ## 8. Open items / ideas not yet built
-- Confirm speed/wheel speeds/yaw with a driving log; calibrate brake pressure. The car is a manual (the bus has a neutral switch).
+- Check absolute speed against GPS (tyre size). Calibrate brake pressure. Decode the remaining IDs (0x144, 0x15A, 0x280–282, 0x361, 0x370–378, 0x660) if useful: likely fuel, odometer, doors/indicators.
 - Reversing camera (USB capture of composite video, switched on by the `reverse` signal) and
   dashcam recording were discussed but deliberately left out for now.
 - Bluetooth music output through a USB DAC to the head unit's AUX was discussed but not built.

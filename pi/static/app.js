@@ -7,9 +7,9 @@ const CFG = {
   shiftAt: 6000,     // shift lights flash from here
   steerRatio: 15,    // steering wheel deg -> road wheel deg
   slipPct: 8,        // wheel speed % difference flagged as slip
-  // --- calculated gear: engine rpm per km/h in each gear. Defaults are approximate for a
-  //     2013 Impreza 5-speed manual on 205/55R16; the dash auto-learns the real values as you drive.
-  gearDefaults: [119.2, 67.2, 44.7, 33.6, 26.9, 22.0],
+  // --- calculated gear (fallback): engine rpm per km/h in each gear, measured from a drive on this car.
+  //     The car also sends its own gear on 0x141, which is the default source.
+  gearDefaults: [122.0, 66.2, 45.3, 34.1, 27.2, 24.1],   // measured on this car (rpm per km/h)
   gearTol: 0.07,     // ratio must be within 7% of a gear to show it
   // --- wheel power estimate (virtual dyno): P = v * (m*a + aero drag + rolling resistance)
   mass: 1400,        // kg, car + driver (2013 Impreza ~1,300 kg kerb)
@@ -51,8 +51,8 @@ let longG = 0;
 // derived values (not on the bus): acceleration from a speed regression, wheel power, calculated gear
 const spdBuf = [];                       // [t ms, speed m/s]
 let accel = 0, wheelKw = 0, pwrPeak = 0;
-let gearCount = store.get('gearCount', 5);
-let gearMode = store.get('gearMode', 'calc');           // 'calc' (rpm/speed) or 'can' (broadcast signal)
+let gearCount = store.get('gearCount', 6);
+let gearMode = store.get('gearMode', 'can');            // 'can' (the car's own gear, 0x141) or 'calc' (rpm/speed)
 let gearCal = store.get('gearCal', null) || CFG.gearDefaults.slice();
 let learn = { ratio: 0, since: 0, dirty: false, saved: 0 };
 let gPeak = 0;
@@ -420,7 +420,7 @@ function derive(now) {
     } else { learn.ratio = ratio; learn.since = now; }
     if (learn.dirty && now - learn.saved > 20000) { store.set('gearCal', gearCal.map(x => Math.round(x * 10) / 10)); learn.dirty = false; learn.saved = now; }
   }
-  if (V.neutral === 1) gear = 0;               // car's own neutral switch (0x141) wins
+  if (V.gear === 7) gear = 0;                  // the car says neutral / between gears
   V.gear_calc = gear;
 }
 
@@ -514,9 +514,10 @@ function renderDash(dt) {
   setText('rpm', Math.round(rpm).toLocaleString());
   const g = $('gear');
   const gv = gearMode === 'calc' ? V.gear_calc : V.gear;
-  const gtxt = V.reverse ? 'R' : gv == null ? '–' : gv === 0 ? 'N' : String(gv);
+  const gtxt = V.reverse ? 'R' : gv == null ? '–' : (gv === 0 || gv === 7) ? 'N' : String(gv);
   setText('gear', gtxt);
   g.classList.toggle('rev', gtxt === 'R');
+  g.classList.toggle('dimgear', gearMode === 'can' && V.clutch === 1 && gtxt !== 'N');   // clutch in: the car's best guess
 
   const lit = Math.round(rpm / CFG.rpmMax * SEGS);
   for (let i = 0; i < SEGS; i++) { const c = i < lit ? segEls[i].dataset.cls : ''; if (segEls[i].className !== c) segEls[i].className = c; }

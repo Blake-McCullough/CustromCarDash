@@ -77,8 +77,9 @@ Logs are saved in `pi/logs/` (not committed to git) in candump format, gzip-comp
   buttons set the maximum. The settings page shows which method is in use.
 - *Dim when headlights on* uses the `low_beam`/`high_beam` signals, so it only works once those are verified.
 
-## Gear and wheel power (calculated)
-A 2013 Impreza doesn't report either over OBD-II, so the dash calculates them:
+## Gear and wheel power
+The car broadcasts its own **gear** (1–6, N) on CAN, and the dash uses it by default. It's shown dimmed while the
+clutch is in (the car is guessing then). Reverse can't be detected. A calculated gear is available as a fallback:
 - **Gear:** engine rpm ÷ speed, matched to each gear's ratio. It starts with approximate ratios and
   **learns your car's exact ones automatically** as you drive steadily in each gear. ⚙ Settings → Gear & Power
   shows the learned values; *Gear ratios* under Reset starts over. Pick 5 or 6 gears there, or switch back to the CAN signal.

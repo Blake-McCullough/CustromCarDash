@@ -221,3 +221,5 @@ html.showcursor button, html.showcursor #c3d { cursor: pointer !important; }
 .nod3d small { font-size: calc(var(--u) * 1.4); letter-spacing: .06em; }
 .nod3d button { background: #0a0b0e; color: var(--fg); border: 1px solid var(--line); padding: calc(var(--u) * 1) calc(var(--u) * 2.4);
   letter-spacing: .14em; margin-top: calc(var(--u) * 1); }
+
+#gear.dimgear { opacity: .4; }

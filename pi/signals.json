@@ -1,22 +1,24 @@
 {
-  "_readme": "CAN decodes for Blake's 2013 Subaru Impreza (GP, 500 kbit/s, OBD pins 6/14). 'verified': true = confirmed from logs recorded on this car (2026-11-18, parked, engine running). 'verified': false = best guess from the same Subaru platform, still to be confirmed (speed/wheel speeds/yaw need a recording while driving). Fields: id, start_byte, length (bytes), endian (big|little), signed, shift (bits), mask, scale, offset, unit.",
+  "_readme": "CAN decodes for Blake's 2013 Subaru Impreza (GP, manual, 500 kbit/s, OBD pins 6/14). 'verified': true = confirmed from logs recorded on this car (2026-11-18: parked with markers, then a ~2 min drive up to 75 km/h). 'verified': false = best guess from the same Subaru platform, still to be confirmed (speed/wheel speeds/yaw need a recording while driving). Fields: id, start_byte, length (bytes), endian (big|little), signed, shift (bits), mask, scale, offset, unit.",
 
   "throttle":   { "id": "0x140", "start_byte": 0, "length": 1, "scale": 0.392,                             "unit": "%",     "verified": true,  "_note": "accelerator pedal; rose 0->35% just before rpm climbed" },
   "rpm":        { "id": "0x140", "start_byte": 2, "length": 2, "endian": "little", "mask": "0x3FFF",       "unit": "rpm",   "verified": true,  "_note": "~815 idle, 2382 on a blip" },
 
-  "neutral":    { "id": "0x141", "start_byte": 6, "length": 1, "shift": 1, "mask": 1,                      "unit": "on/off","verified": true,  "_note": "1 in neutral (byte 0x27), 0 with any gear selected (0x21)" },
+  "gear":       { "id": "0x141", "start_byte": 6, "length": 1, "mask": 7,                                  "unit": "gear",  "verified": true,  "_note": "ECU's gear: 1-6, 7 = neutral/between gears. Steady rpm/kmh per gear: 122, 66, 45, 34, 27, 24" },
+  "clutch":     { "id": "0x141", "start_byte": 6, "length": 1, "shift": 5, "mask": 1,                      "unit": "on/off","verified": true,  "_note": "drivetrain disengaged: clutch pressed (coasting, launches) or neutral (parked = 0x27)" },
+  "overrun":    { "id": "0x141", "start_byte": 6, "length": 1, "shift": 6, "mask": 1,                      "unit": "on/off","verified": true,  "_note": "set whenever the pedal is released in gear" },
 
   "steering":   { "id": "0x0D0", "start_byte": 0, "length": 2, "endian": "little", "signed": true, "scale": -0.1, "unit": "°", "verified": true, "_note": "full lock about -578 (left) / +576 (right) raw x0.1; negated so left is positive" },
-  "lat_g":      { "id": "0x0D0", "start_byte": 6, "length": 1, "signed": true, "scale": 0.0204,             "unit": "g",     "verified": false, "_note": "same-platform decode (0.2 m/s^2 per bit); ~0 when parked as expected" },
-  "yaw_rate":   { "id": "0x0D0", "start_byte": 2, "length": 2, "endian": "little", "signed": true, "scale": 0.2725, "unit": "°/s", "verified": false },
+  "lat_g":      { "id": "0x0D0", "start_byte": 6, "length": 1, "signed": true, "scale": 0.0204,             "unit": "g",     "verified": true,  "_note": "0.2 m/s^2 per bit; -0.31 g in a tight right turn at 15 km/h (physics-consistent)" },
+  "yaw_rate":   { "id": "0x0D0", "start_byte": 2, "length": 2, "endian": "little", "signed": true, "scale": 0.2725, "unit": "°/s", "verified": true,  "_note": "-41 °/s in a tight right turn at 15 km/h (physics-consistent); right = negative" },
 
-  "speed":      { "id": "0x0D1", "start_byte": 0, "length": 2, "endian": "little", "scale": 0.015625,    "unit": "km/h",  "verified": false, "_note": "0 when parked; confirm while driving" },
+  "speed":      { "id": "0x0D1", "start_byte": 0, "length": 2, "endian": "little", "scale": 0.05722,     "unit": "km/h",  "verified": true,  "_note": "scale fitted to the wheel speeds (within 0.4%); absolute accuracy depends on tyre size, check against GPS" },
   "brake":      { "id": "0x0D1", "start_byte": 2, "length": 1, "scale": 1.0,                              "unit": "%",     "verified": true,  "_note": "brake pressure (uncalibrated: ~50 with the pedal held firmly)" },
 
-  "wheel_fl":   { "id": "0x0D4", "start_byte": 0, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": false },
-  "wheel_fr":   { "id": "0x0D4", "start_byte": 2, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": false },
-  "wheel_rl":   { "id": "0x0D4", "start_byte": 4, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": false },
-  "wheel_rr":   { "id": "0x0D4", "start_byte": 6, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": false },
+  "wheel_fl":   { "id": "0x0D4", "start_byte": 0, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": true, "_note": "outer wheels faster in turns, as expected" },
+  "wheel_fr":   { "id": "0x0D4", "start_byte": 2, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": true, "_note": "outer wheels faster in turns, as expected" },
+  "wheel_rl":   { "id": "0x0D4", "start_byte": 4, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": true, "_note": "outer wheels faster in turns, as expected" },
+  "wheel_rr":   { "id": "0x0D4", "start_byte": 6, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": true, "_note": "outer wheels faster in turns, as expected" },
 
   "brake_sw":   { "id": "0x152", "start_byte": 6, "length": 1, "shift": 4, "mask": 1,                      "unit": "on/off","verified": true,  "_note": "also mirrored in 0x0D3 byte 2 bit 5" },
   "handbrake":  { "id": "0x152", "start_byte": 6, "length": 1, "shift": 3, "mask": 1,                      "unit": "on/off","verified": true },
