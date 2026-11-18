@@ -19,7 +19,7 @@ A 16 × 11.6 mm two-layer board that carries the Apple Auth 3.0 chip (MFI343S001
 | `JLCPCB-BOM-with-pullups.csv` | The same, plus R1/R2 |
 | `JLCPCB-CPL.csv` | Component placement in the Gerbers' own coordinates (mm; board spans X 0…16, Y 0…−11.6, so Y is negative) |
 
-If you order JLCPCB assembly: in the placement preview, the **chip's pin-1 dot must sit on the white silk dot**, top-left of U1. Rotate U1 in the preview if it doesn't. J1/J2 aren't in the assembly files: hand-solder them.
+If you order JLCPCB assembly: in the placement preview, the **chip's pin-1 dot must sit on the white silk dot**, top-left of U1, and the body must be **wider than tall** (3 × 2 mm). The CPL sets U1 to **270°** because JLCPCB's model for this part showed up 90° off at 0°. Still check it in the preview: their library can change. J1/J2 aren't in the assembly files: hand-solder them.
 
 To regenerate it: `python3 build_board.py` (needs KiCad 7 and the `kicad-footprints` library), then open the `.kicad_pcb` in KiCad, run DRC, and plot Gerbers.
 
