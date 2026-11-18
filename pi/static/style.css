@@ -209,3 +209,9 @@ html.showcursor button, html.showcursor #c3d { cursor: pointer !important; }
 .loglist a { color: var(--acc); text-decoration: none; border: 1px solid var(--line); padding: calc(var(--u) * .5) calc(var(--u) * 1.2); border-radius: 3px; }
 .loglist button { background: #0a0b0e; color: var(--dim); border: 1px solid var(--line); padding: calc(var(--u) * .5) calc(var(--u) * 1.2); border-radius: 3px; }
 #dim { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 50; transition: opacity .6s; }
+
+.nod3d { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: calc(var(--u) * 1.2); text-align: center; color: var(--dim); letter-spacing: .16em; font-size: calc(var(--u) * 2); }
+.nod3d small { font-size: calc(var(--u) * 1.4); letter-spacing: .06em; }
+.nod3d button { background: #0a0b0e; color: var(--fg); border: 1px solid var(--line); padding: calc(var(--u) * 1) calc(var(--u) * 2.4);
+  letter-spacing: .14em; margin-top: calc(var(--u) * 1); }

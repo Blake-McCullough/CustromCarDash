@@ -1,33 +1,28 @@
 {
-  "_readme": "Signal decodes for a 2013 Subaru Impreza (500 kbit/s, OBD pins 6/14). Starting points from a 2013 Subaru main-bus decode (Autosport Labs forum) + 0x140 RPM from 2015 WRX logs. NONE are verified on your car yet: confirm each in the BUS tab, then set verified=true. Fields: id, start_byte, length (bytes), endian (big|little), signed, shift (bits), mask, scale, offset, unit.",
+  "_readme": "CAN decodes for Blake's 2013 Subaru Impreza (GP, 500 kbit/s, OBD pins 6/14). 'verified': true = confirmed from logs recorded on this car (2026-11-18, parked, engine running). 'verified': false = best guess from the same Subaru platform, still to be confirmed (speed/wheel speeds/yaw need a recording while driving). Fields: id, start_byte, length (bytes), endian (big|little), signed, shift (bits), mask, scale, offset, unit.",
 
-  "rpm":        { "id": "0x410", "start_byte": 5, "length": 2, "endian": "little",                    "unit": "rpm",  "verified": false },
-  "rpm_alt":    { "id": "0x140", "start_byte": 2, "length": 2, "endian": "little", "mask": "0x3FFF",  "unit": "rpm",  "verified": false },
-  "throttle":   { "id": "0x410", "start_byte": 4, "length": 1, "scale": 0.392,                         "unit": "%",    "verified": false },
-  "torque":     { "id": "0x410", "start_byte": 2, "length": 1, "scale": 1.6,                           "unit": "Nm",   "verified": false },
-  "gear":       { "id": "0x411", "start_byte": 4, "length": 1,                                         "unit": "raw",  "verified": false },
-  "cruise":     { "id": "0x411", "start_byte": 5, "length": 1, "mask": 1,                              "unit": "on/off","verified": false },
-  "mil":        { "id": "0x411", "start_byte": 7, "length": 1, "mask": 1,                              "unit": "on/off","verified": false },
+  "throttle":   { "id": "0x140", "start_byte": 0, "length": 1, "scale": 0.392,                             "unit": "%",     "verified": true,  "_note": "accelerator pedal; rose 0->35% just before rpm climbed" },
+  "rpm":        { "id": "0x140", "start_byte": 2, "length": 2, "endian": "little", "mask": "0x3FFF",       "unit": "rpm",   "verified": true,  "_note": "~815 idle, 2382 on a blip" },
 
-  "speed":      { "id": "0x512", "start_byte": 2, "length": 2, "endian": "little", "scale": 0.05625,  "unit": "km/h", "verified": false },
-  "brake_sw":   { "id": "0x512", "start_byte": 4, "length": 1, "shift": 4, "mask": 1,                  "unit": "on/off","verified": false },
-  "vdc_off":    { "id": "0x512", "start_byte": 0, "length": 1, "shift": 4, "mask": 1,                  "unit": "on/off","verified": false },
-  "wheel_fl":   { "id": "0x513", "start_byte": 0, "length": 2, "endian": "little", "scale": 0.05625,  "unit": "km/h", "verified": false },
-  "wheel_fr":   { "id": "0x513", "start_byte": 2, "length": 2, "endian": "little", "scale": 0.05625,  "unit": "km/h", "verified": false },
-  "wheel_rl":   { "id": "0x513", "start_byte": 4, "length": 2, "endian": "little", "scale": 0.05625,  "unit": "km/h", "verified": false },
-  "wheel_rr":   { "id": "0x513", "start_byte": 6, "length": 2, "endian": "little", "scale": 0.05625,  "unit": "km/h", "verified": false },
+  "neutral":    { "id": "0x141", "start_byte": 6, "length": 1, "shift": 1, "mask": 1,                      "unit": "on/off","verified": true,  "_note": "1 in neutral (byte 0x27), 0 with any gear selected (0x21)" },
 
-  "steering":   { "id": "0x511", "start_byte": 0, "length": 2, "endian": "little", "signed": true, "scale": 0.1, "unit": "°", "verified": false },
-  "brake":      { "id": "0x511", "start_byte": 4, "length": 1, "scale": 0.392,                         "unit": "%",    "verified": false },
-  "yaw_rate":   { "id": "0x070", "start_byte": 0, "length": 2, "endian": "little", "scale": 0.005, "offset": -163.84, "unit": "°/s", "verified": false },
-  "lat_g":      { "id": "0x070", "start_byte": 4, "length": 2, "endian": "little", "scale": 0.00012742, "offset": -4.1768, "unit": "g", "verified": false },
+  "steering":   { "id": "0x0D0", "start_byte": 0, "length": 2, "endian": "little", "signed": true, "scale": -0.1, "unit": "°", "verified": true, "_note": "full lock about -578 (left) / +576 (right) raw x0.1; negated so left is positive" },
+  "lat_g":      { "id": "0x0D0", "start_byte": 6, "length": 1, "signed": true, "scale": 0.0204,             "unit": "g",     "verified": false, "_note": "same-platform decode (0.2 m/s^2 per bit); ~0 when parked as expected" },
+  "yaw_rate":   { "id": "0x0D0", "start_byte": 2, "length": 2, "endian": "little", "signed": true, "scale": 0.2725, "unit": "°/s", "verified": false },
 
-  "reverse":    { "id": "0x514", "start_byte": 0, "length": 1, "shift": 2, "mask": 1,                  "unit": "on/off","verified": false },
-  "ambient":    { "id": "0x514", "start_byte": 2, "length": 1, "scale": 0.5, "offset": -40,            "unit": "°C",   "verified": false },
-  "high_beam":  { "id": "0x514", "start_byte": 3, "length": 1, "shift": 3, "mask": 1,                  "unit": "on/off","verified": false },
-  "low_beam":   { "id": "0x514", "start_byte": 3, "length": 1, "shift": 2, "mask": 1,                  "unit": "on/off","verified": false },
-  "handbrake":  { "id": "0x514", "start_byte": 7, "length": 1, "shift": 7, "mask": 1,                  "unit": "on/off","verified": false },
+  "speed":      { "id": "0x0D1", "start_byte": 0, "length": 2, "endian": "little", "scale": 0.015625,    "unit": "km/h",  "verified": false, "_note": "0 when parked; confirm while driving" },
+  "brake":      { "id": "0x0D1", "start_byte": 2, "length": 1, "scale": 1.0,                              "unit": "%",     "verified": true,  "_note": "brake pressure (uncalibrated: ~50 with the pedal held firmly)" },
 
-  "coolant":    { "id": "0x600", "start_byte": 3, "length": 1, "offset": -40,                          "unit": "°C",   "verified": false },
-  "clutch":     { "id": "0x600", "start_byte": 6, "length": 1, "shift": 2, "mask": 1,                  "unit": "on/off","verified": false }
+  "wheel_fl":   { "id": "0x0D4", "start_byte": 0, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": false },
+  "wheel_fr":   { "id": "0x0D4", "start_byte": 2, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": false },
+  "wheel_rl":   { "id": "0x0D4", "start_byte": 4, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": false },
+  "wheel_rr":   { "id": "0x0D4", "start_byte": 6, "length": 2, "endian": "little", "scale": 0.05747,     "unit": "km/h",  "verified": false },
+
+  "brake_sw":   { "id": "0x152", "start_byte": 6, "length": 1, "shift": 4, "mask": 1,                      "unit": "on/off","verified": true,  "_note": "also mirrored in 0x0D3 byte 2 bit 5" },
+  "handbrake":  { "id": "0x152", "start_byte": 6, "length": 1, "shift": 3, "mask": 1,                      "unit": "on/off","verified": true },
+  "low_beam":   { "id": "0x152", "start_byte": 7, "length": 1, "shift": 3, "mask": 1,                      "unit": "on/off","verified": true },
+  "high_beam":  { "id": "0x152", "start_byte": 7, "length": 1, "shift": 4, "mask": 1,                      "unit": "on/off","verified": true },
+
+  "oil_temp":   { "id": "0x360", "start_byte": 2, "length": 1, "offset": -40,                             "unit": "°C",    "verified": false, "_note": "~80 °C, lags coolant, falls after engine off; very likely oil" },
+  "coolant":    { "id": "0x360", "start_byte": 3, "length": 1, "offset": -40,                             "unit": "°C",    "verified": true,  "_note": "85 -> 91 °C during warm-up" }
 }

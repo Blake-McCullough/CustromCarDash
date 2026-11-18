@@ -250,6 +250,7 @@ function renderSysinfo() {
   const rows = [
     ['Data source', !link ? 'no CAN link' : source === 'demo' ? 'demo (simulated)' : 'live CAN (can0)'],
     ['OBD-II polling', obdText()],
+    ...screensRows(),
     ['CAN frames/s', $('fps').textContent],
     ['Signals', `${Object.keys(meta).length} defined · ${n} unverified`],
     ['Car model', car.modelInfo],
@@ -259,6 +260,13 @@ function renderSysinfo() {
   $('sysinfo').innerHTML = rows.map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join('');
 }
 setInterval(renderSysinfo, 1000);
+
+let screens = [];
+setInterval(async () => { if (view !== 'settings') return; try { screens = await (await fetch('/api/clients')).json(); } catch { screens = []; } }, 2000);
+function screensRows() {
+  return screens.map(c => [c.local ? 'Pi screen' : 'Remote (' + c.ip + ')',
+    `${c.gpu} · ${c.fps} fps · 3D ${c.car3d}${c.errors.length ? ' · ' + c.errors[c.errors.length - 1] : ''}${c.id === CLIENT_ID ? ' (this one)' : ''}`]);
+}
 
 // ---------------------------------------------------------------- display brightness
 let brightMethod = 'software', brightNow = null;
@@ -397,6 +405,7 @@ function derive(now) {
     } else { learn.ratio = ratio; learn.since = now; }
     if (learn.dirty && now - learn.saved > 20000) { store.set('gearCal', gearCal.map(x => Math.round(x * 10) / 10)); learn.dirty = false; learn.saved = now; }
   }
+  if (V.neutral === 1) gear = 0;               // car's own neutral switch (0x141) wins
   V.gear_calc = gear;
 }
 
@@ -531,7 +540,13 @@ function renderDash(dt) {
     speed: spd, wheels, steerDeg: clamp(str / CFG.steerRatio, -38, 38), latG: lat, longG: lng,
     brake: brk, brakeSw: V.brake_sw, lowBeam: V.low_beam, highBeam: V.high_beam, reverse: V.reverse,
   }, dt, performance.now() / 1000);
-  car.render();
+  if (car3dState === 'on') {
+    const r0 = performance.now();
+    try { car.render(); } catch (e) { car3dFail(e); }
+    const ms = performance.now() - r0;
+    slow3d = ms > 120 ? slow3d + 1 : 0;              // ~8 fps or worse for 15 frames in a row
+    if (slow3d >= 15) pause3d('too slow on this screen (' + Math.round(ms) + ' ms per frame)');
+  }
 
   // wheel labels
   const pos = car.wheelScreen();
@@ -539,7 +554,7 @@ function renderDash(dt) {
   for (const k of ['fl', 'fr', 'rl', 'rr']) {
     const el = $('wl-' + k), p = pos[k], w = wheels[k];
     el.style.left = p.x + 'px'; el.style.top = p.y + 'px';
-    el.style.opacity = p.vis ? 1 : 0;
+    el.style.opacity = p.vis && car3dState === 'on' ? 1 : 0;
     el.lastChild.textContent = w == null ? '--' : Math.round(w).toString();
     el.classList.toggle('slip', w != null && (V.speed ?? 0) > 5 && Math.abs(w - ref) / ref * 100 > CFG.slipPct);
   }
@@ -683,13 +698,77 @@ function renderEngine() {
 
 // ---------------------------------------------------------------- main loop
 let lastT = performance.now(), frames = 0, fpsT = lastT, slowSecs = 0, slowCar = 0;
+// ---------------------------------------------------------------- resilience + diagnostics
+// One broken part (usually the 3D view on a weak or software-only GPU) must never freeze the
+// gauges or the overlay. The Pi screen also reports its GPU and errors to the backend, so they can
+// be seen from a phone (Settings > System) and in `journalctl -u impreza-dash`.
+var car3dState = 'on', slow3d = 0, slowPage = 0;
+const CLIENT_ID = Math.random().toString(36).slice(2, 8);
+const clientErrors = [];
+let reportTimer = null;
+function noteError(where, e) {
+  const msg = (where + ': ' + ((e && (e.message || e.reason)) || e || 'error')).slice(0, 300);
+  if (clientErrors[clientErrors.length - 1] !== msg) clientErrors.push(msg);
+  while (clientErrors.length > 10) clientErrors.shift();
+  console.error(msg);
+  clearTimeout(reportTimer); reportTimer = setTimeout(reportClient, 500);
+}
+const guardFails = {};
+function guard(name, fn) {
+  try { fn(); guardFails[name] = 0; }
+  catch (e) { guardFails[name] = (guardFails[name] || 0) + 1; if (guardFails[name] <= 3) noteError(name, e); }
+}
+window.addEventListener('error', e => noteError('page', e.error || e.message));
+window.addEventListener('unhandledrejection', e => noteError('promise', e.reason));
+function car3dFail(e) { noteError('3d', e); pause3d('error: ' + (e && e.message || e)); }
+function pause3d(why) {
+  if (car3dState !== 'on') return;
+  // first try the cheapest settings once, then give up on 3D for this session
+  if (hq || (CAR.model === 'impreza' && CAR.detail === 'high')) {
+    hq = false; applyFx(false);
+    if (CAR.model === 'impreza' && CAR.detail === 'high') { CAR.detail = 'low'; loadCar(); }
+    slow3d = 0; noteError('3d', 'slow, switched to low detail/effects: ' + why);
+    return;
+  }
+  car3dState = 'paused';
+  noteError('3d', 'paused: ' + why);
+  $('c3d').style.visibility = 'hidden';
+  let n = document.getElementById('nod3d');
+  if (!n) {
+    n = document.createElement('div'); n.id = 'nod3d'; n.className = 'nod3d';
+    $('c3d').parentElement.appendChild(n);
+  }
+  n.innerHTML = `3D VIEW PAUSED<br><small>${why}${SOFTWARE_GPU ? '<br>Chromium is not using the GPU (' + GPU + ')' : ''}</small><br><button id="retry3d">TRY AGAIN</button>`;
+  $('retry3d').onclick = () => { car3dState = 'on'; slow3d = 0; $('c3d').style.visibility = ''; n.remove(); };
+}
+function gpuName() {
+  try {
+    const gl = car.renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+  } catch { return 'unknown'; }
+}
+const GPU = gpuName();
+const SOFTWARE_GPU = /swiftshader|llvmpipe|softpipe|software/i.test(GPU);
+async function reportClient() {
+  try {
+    await fetch('/api/client', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      id: CLIENT_ID, gpu: GPU, fps: +$('gfps').textContent || 0, view, link, w: innerWidth, h: innerHeight,
+      local: ['127.0.0.1', 'localhost'].includes(location.hostname), car3d: car3dState, errors: clientErrors,
+    }) });
+  } catch { /* backend restarting */ }
+}
+setInterval(reportClient, 5000);
+setTimeout(reportClient, 1500);
+if (SOFTWARE_GPU) noteError('gpu', 'no GPU acceleration (' + GPU + '): 3D will be slow');
+
 function loop(t) {
   const dt = Math.min((t - lastT) / 1000, 0.1);
   lastT = t;
-  if (view === 'drive') renderDash(dt);
-  else if (view === 'graphs') drawGraphs();
-  else if (view === 'engine') renderEngine();
-  renderOff();
+  guard('overlay', renderOff);                  // first, so it never waits on the 3D
+  if (view === 'drive') guard('dash', () => renderDash(dt));
+  else if (view === 'graphs') guard('graphs', drawGraphs);
+  else if (view === 'engine') guard('engine', renderEngine);
 
   frames++;
   if (t - fpsT >= 1000) {
@@ -701,6 +780,8 @@ function loop(t) {
     if (AUTO_FX && !hq && !carBusy && CAR.model === 'impreza' && CAR.detail === 'high' && view === 'drive' && fps < 25) {
       if (++slowCar >= 5) { CAR.detail = 'low'; loadCar(); slowCar = 0; }
     } else slowCar = 0;
+    // whole page under 8 fps on the drive view even after the cheap settings: pause the 3D
+    if (car3dState === 'on' && view === 'drive' && fps < 8) { if (++slowPage >= 8) { pause3d(`page at ${fps} fps`); slowPage = 0; } } else slowPage = 0;
     frames = 0; fpsT = t;
   }
   requestAnimationFrame(loop);

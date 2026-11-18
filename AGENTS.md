@@ -125,6 +125,8 @@ car CAN (500k) → RS485 CAN HAT (MCP2515) → Linux SocketCAN can0 (listen-only
     (`BusLogger`): every frame in `on_frame()` goes to `pi/logs/can_YYYYmmdd_HHMMSS.log.gz` (candump format,
     gzip so a power cut leaves a readable partial file). Markers go to `.markers.csv`. The zip bundles both plus a README.
     It stops below 300 MB free. Snapshots carry `"log": {on, name, frames, marks, secs, reason}`.
+  - `POST /api/client`, `GET /api/clients`: every dash page reports its GPU, fps, 3D state and JS errors
+    every 5 s. New errors are printed to the journal; Settings > System lists each screen (Pi screen vs remote).
   - `GET/POST /api/brightness`: `Brightness` uses `/sys/class/backlight` if writable, else `ddcutil` (DDC/CI,
     probed at startup), else reports `software` and the page dims itself with the `#dim` overlay.
   - `/static/*`: frontend. A middleware adds `Cache-Control: no-cache` so edits show on refresh.
@@ -154,20 +156,32 @@ Extra signal names (not in signals.json): `engine_load, map_kpa, intake_temp, ti
 fuel_level, voltage, baro, oil_temp`. The frontend shows them on the **ENGINE** tab (`ETILES` in app.js).
 
 ### 4.3 `signals.json`
-Each entry is `name: {id, start_byte, length, endian?, signed?, shift?, mask?, scale?, offset?, unit, verified}`.
-Current names: `rpm, rpm_alt, throttle, torque, gear, cruise, mil, speed, brake_sw, vdc_off,
-wheel_fl, wheel_fr, wheel_rl, wheel_rr, steering, brake, yaw_rate, lat_g, reverse, ambient,
-high_beam, low_beam, handbrake, coolant, clutch`.
+Each entry is `name: {id, start_byte, length, endian?, signed?, shift?, mask?, scale?, offset?, unit, verified, _note?}`.
 
-Main IDs (11-bit): `0x070` yaw/lateral g, `0x140` RPM (alt, 14-bit masked), `0x410` RPM/throttle/torque,
-`0x411` gear/cruise/MIL, `0x511` steering/brake %, `0x512` vehicle speed/brake switch/VDC,
-`0x513` four wheel speeds (×0.05625 km/h), `0x514` reverse/ambient/lights/handbrake, `0x600` coolant/clutch.
+**Decoded from logs recorded on this car (2026-11-18, parked, engine running).** The car uses the 2012+ Subaru
+platform layout, **not** the 0x410/0x511-style IDs we first guessed (those IDs don't exist on this bus).
+The bus seen at the OBD port: `002 0D0 0D1 0D2 0D3 0D4 140 141 144 152 156 15A 280 281 282 360 361 370 372 374 376 378 3D1 660`.
 
-**All decodes are unverified.** They come from a 2013 Subaru main-bus decode found online and from 2015
-WRX logs, not from this car. `gear` is a raw value with an unknown mapping, and the car may be a CVT.
-The frontend shows an amber "?" next to any label whose signal has `verified: false`. The workflow is:
-use the BUS tab or the ESP32 logger to confirm a signal, edit `signals.json`, set `verified: true`, and
-restart the backend. The frontend accesses signals **by name**, so renaming a signal breaks the UI.
+| Signal | Decode | Status |
+|---|---|---|
+| throttle (accelerator pedal) | `0x140` b0 × 0.392 % | verified |
+| rpm | `0x140` b2–3 LE & 0x3FFF | verified |
+| neutral | `0x141` b6 bit1 (0x27 neutral / 0x21 in gear) | verified |
+| steering | `0x0D0` b0–1 LE signed × −0.1 ° (left +) | verified |
+| brake (pressure, uncalibrated) | `0x0D1` b2 | verified |
+| brake_sw | `0x152` b6 bit4 (mirror: `0x0D3` b2 bit5) | verified |
+| handbrake | `0x152` b6 bit3 | verified |
+| low_beam / high_beam | `0x152` b7 bit3 / bit4 | verified |
+| coolant | `0x360` b3 − 40 | verified |
+| oil_temp | `0x360` b2 − 40 | likely |
+| speed | `0x0D1` b0–1 LE × 0.015625 km/h | guess (0 when parked) |
+| wheel_fl/fr/rl/rr | `0x0D4` 4 × LE16 × 0.05747 km/h | guess (0 when parked) |
+| yaw_rate, lat_g | `0x0D0` b2–3, b6 | guess |
+
+Not found on this bus: clutch switch, reverse switch, gear number, cruise, MIL, outside temp. The gear
+shown is calculated (rpm/speed, see 4.4) and forced to N by `neutral`. Next step: record a short drive to
+confirm speed/wheel speeds and calibrate brake pressure. The frontend accesses signals **by name**.
+Unverified signals get an amber "?".
 
 ### 4.4 Frontend: `static/app.js` (ES module, uses top-level `await`)
 - **Settings store:** loads `/api/settings` at startup into `SETTINGS`. `store.get(k, default)` and
@@ -203,6 +217,11 @@ restart the backend. The frontend accesses signals **by name**, so renaming a si
     summary) or "DASH OFFLINE" (no WS message for 3 s).
   - Auto quality: if the render fps stays under 30 for 5 s on the drive view (and `autofx` is on), it
     switches the glow effects to low.
+  - **Resilience:** the loop runs `renderOff()` first and wraps each part in `guard()`, so an exception
+    can't freeze the page. `pause3d()` first drops to low effects/detail, then hides the 3D view (with
+    TRY AGAIN) if `car.render()` takes > 120 ms for 15 frames or the page stays < 8 fps for 8 s. This came from a
+    real bug: on the Pi 4 the page sat on "WAITING FOR CAN" while phones showed live data.
+    `SOFTWARE_GPU` flags SwiftShader/llvmpipe.
 - **Themes:** `THEMES = {red, wrb, ice, matrix, gold, neon, pink, mono}`, each `{name, acc, tint}`.
   `applyTheme()` sets the CSS variables `--acc`, `--accglow` and `--tint` and calls `car.setTheme()`.
   Warning colours (`--red`: brake bar, slip, check engine, redline segments) deliberately stay red.
@@ -294,7 +313,7 @@ and `Z`, and refuses `t/T/r/R`. On the Pi: `slcand -o -c -s6 -S 921600 /dev/ttyU
   Imported models should stay under about 100k triangles.
 
 ## 8. Open items / ideas not yet built
-- Verify every signal on the real car and work out the gear-value mapping (or whether it's a CVT).
+- Confirm speed/wheel speeds/yaw with a driving log; calibrate brake pressure. The car is a manual (the bus has a neutral switch).
 - Reversing camera (USB capture of composite video, switched on by the `reverse` signal) and
   dashcam recording were discussed but deliberately left out for now.
 - Bluetooth music output through a USB DAC to the head unit's AUX was discussed but not built.

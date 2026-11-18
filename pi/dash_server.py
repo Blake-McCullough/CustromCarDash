@@ -494,7 +494,7 @@ async def demo_source(state, obd=False):
     if obd:
         asyncio.create_task(obd_poller(state, fake_ecu(state)))
     noise = {i: bytearray(random.getrandbits(8) for _ in range(8))
-             for i in (0x0D0, 0x0D1, 0x0D4, 0x141, 0x144, 0x152, 0x360, 0x361, 0x501, 0x601, 0x630, 0x6D1)}
+             for i in (0x002, 0x0D2, 0x0D3, 0x144, 0x156, 0x15A, 0x280, 0x281, 0x282, 0x361, 0x370, 0x372)}
     ratios = [3.454, 1.947, 1.296, 0.972, 0.738]   # approx 5-speed
     final, tyre_m = 4.111, 1.97                     # final drive, tyre circumference (m)
     speed = 0.0
@@ -548,6 +548,7 @@ async def demo_source(state, obd=False):
                      "timing_adv": 28 - thr * 0.15, "maf": 2.5 + rpm / 6500 * thr * 0.9, "stft": 1.6 * math.sin(now),
                      "ltft": -2.3, "fuel_level": 62, "voltage": 14.1 + 0.1 * math.sin(now / 3), "baro": 101,
                      "oil_temp": 96})
+        vals["neutral"] = 1 if gear == 0 else 0
         state.sim = vals
         frames = {}
         for name, s in state.sigs.items():
@@ -670,6 +671,34 @@ async def log_download(request):
                         headers={"Content-Disposition": f'attachment; filename="{base}.zip"'})
 
 
+async def client_report(request):
+    """Each dash page (Pi screen, phone...) reports its GPU, fps and errors, so problems on the
+    Pi's own screen can be seen from a phone and in the journal."""
+    try:
+        body = await request.json()
+    except ValueError:
+        return web.Response(status=400)
+    cid = str(body.get("id", ""))[:12]
+    clients = request.app["screens"]
+    prev = clients.get(cid, {}).get("errors", [])
+    errs = [str(e)[:300] for e in body.get("errors", [])][-10:]
+    for e in errs:
+        if e not in prev:
+            print(f"[screen {cid} {'pi' if body.get('local') else request.remote}] {e}", flush=True)
+    clients[cid] = {"id": cid, "ip": request.remote, "local": bool(body.get("local")),
+                    "gpu": str(body.get("gpu", "?"))[:80], "fps": body.get("fps", 0),
+                    "car3d": str(body.get("car3d", "?"))[:10], "errors": errs, "seen": time.time()}
+    return web.json_response({"ok": True})
+
+
+async def client_list(request):
+    now = time.time()
+    clients = request.app["screens"]
+    for k in [k for k, c in clients.items() if now - c["seen"] > 30]:
+        del clients[k]
+    return web.json_response(sorted(clients.values(), key=lambda c: not c["local"]))
+
+
 async def brightness_api(request):
     br = request.app["bright"]
     if request.method == "POST":
@@ -734,6 +763,7 @@ def main():
     app = web.Application(middlewares=[no_cache])
     app["state"] = BusState(sigs, by_id)
     app["bright"] = Brightness()
+    app["screens"] = {}
     app["clients"] = {}
     app["cursor"] = args.cursor
     app.router.add_get("/", index)
@@ -744,6 +774,8 @@ def main():
     app.router.add_get("/api/logs", log_list)
     app.router.add_get("/logs/{name}.zip", log_download)
     app.router.add_get("/api/brightness", brightness_api)
+    app.router.add_post("/api/client", client_report)
+    app.router.add_get("/api/clients", client_list)
     app.router.add_post("/api/brightness", brightness_api)
     app.router.add_static("/static", HERE / "static")
 
