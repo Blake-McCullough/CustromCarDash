@@ -52,7 +52,7 @@
         <div class="brow"><div class="label" data-sig="throttle">THROTTLE</div><div class="bar"><i id="b-thr"></i></div><b id="thr">0%</b></div>
         <div class="brow"><div class="label" data-sig="brake">BRAKE</div><div class="bar red"><i id="b-brk"></i></div><b id="brk">0%</b></div>
         <div class="brow"><div class="label" data-sig="steering">STEER</div><div class="bar mid"><i id="b-str"></i></div><b id="str">0°</b></div>
-        <div class="brow"><div class="label" data-sig="torque">TORQUE</div><div class="bar"><i id="b-trq"></i></div><b id="trq">0</b></div>
+        <div class="brow"><div class="label">POWER</div><div class="bar"><i id="b-pwr"></i></div><b id="pwr">0</b></div>
       </div>
 
       <div class="card minis">
@@ -141,9 +141,17 @@
         <div class="opt"><span>Redline</span><div class="step" data-k="redline" data-step="100" data-min="3000" data-max="8000"><button>&minus;</button><b></b><button>+</button></div></div>
       </div>
       <div class="card sblock">
+        <div class="label">GEAR &amp; POWER</div>
+        <div class="opt"><span>Gear shown</span><div class="seg2" id="o-gearmode"><button data-v="calc">CALCULATED</button><button data-v="can">CAN SIGNAL</button></div></div>
+        <div class="opt"><span>Gears</span><div class="seg2" id="o-gears"><button data-v="5">5</button><button data-v="6">6</button></div></div>
+        <div class="opt"><span>Auto-learn ratios</span><div class="seg2" id="o-learn"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
+        <div class="opt"><span class="dim" id="gearcal"></span></div>
+        <div class="opt"><span>Car + driver (kg)</span><div class="step" data-k="mass" data-step="25" data-min="900" data-max="2500"><button>&minus;</button><b></b><button>+</button></div></div>
+      </div>
+      <div class="card sblock">
         <div class="label">RESET</div>
         <div class="resets">
-          <button id="r-trip">TRIP</button><button id="r-zt">0–100 BEST</button><button id="r-g">G PEAK</button><button id="r-all">ALL SETTINGS</button>
+          <button id="r-trip">TRIP</button><button id="r-zt">0–100 BEST</button><button id="r-g">G PEAK</button><button id="r-pwr">POWER PEAK</button><button id="r-gears">GEAR RATIOS</button><button id="r-all">ALL SETTINGS</button>
         </div>
       </div>
       <div class="card sblock">

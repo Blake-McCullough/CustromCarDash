@@ -55,6 +55,16 @@ Only re-run `setup_pi.sh` if the installer itself changed.
 - If the screen shows the wrong resolution, add `video=HDMI-A-1:1024x600@60` (your screen's
   resolution) to the end of the single line in `/boot/firmware/cmdline.txt`, then reboot.
 
+## Gear and wheel power (calculated)
+A 2013 Impreza doesn't report either over OBD-II, so the dash calculates them:
+- **Gear:** engine rpm ÷ speed, matched to each gear's ratio. It starts with approximate ratios and
+  **learns your car's exact ones automatically** as you drive steadily in each gear. ⚙ Settings → Gear & Power
+  shows the learned values; *Gear ratios* under Reset starts over. Pick 5 or 6 gears there, or switch back to the CAN signal.
+- **Wheel power (kW):** a "virtual dyno" from how fast you're accelerating, the car's weight, drag and rolling
+  resistance. Set **Car + driver (kg)** in Settings for accuracy. It reads 0 off-throttle and with the clutch in.
+  It's an estimate (expect ±10–15%); best on a flat road in one gear at full throttle. Peak is shown on the ENGINE tab.
+- If your car is a **CVT**, the calculated gear only works in manual (paddle) mode.
+
 ## OBD-II live data (optional, `OBD=1`)
 By default the dash only **listens** to the car's own broadcast messages. With OBD mode it also
 **asks** the engine computer for standard OBD-II values, the same requests every scan tool and ELM327

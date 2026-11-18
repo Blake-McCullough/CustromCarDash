@@ -7,6 +7,14 @@ const CFG = {
   shiftAt: 6000,     // shift lights flash from here
   steerRatio: 15,    // steering wheel deg -> road wheel deg
   slipPct: 8,        // wheel speed % difference flagged as slip
+  // --- calculated gear: engine rpm per km/h in each gear. Defaults are approximate for a
+  //     2013 Impreza 5-speed manual on 205/55R16; the dash auto-learns the real values as you drive.
+  gearDefaults: [119.2, 67.2, 44.7, 33.6, 26.9, 22.0],
+  gearTol: 0.07,     // ratio must be within 7% of a gear to show it
+  // --- wheel power estimate (virtual dyno): P = v * (m*a + aero drag + rolling resistance)
+  mass: 1400,        // kg, car + driver (2013 Impreza ~1,300 kg kerb)
+  cda: 0.70,         // drag coefficient x frontal area (m²)
+  crr: 0.012,        // rolling resistance coefficient
 };
 
 const $ = id => document.getElementById(id);
@@ -29,6 +37,7 @@ const store = {
 };
 CFG.redline = store.get('redline', CFG.redline);
 CFG.shiftAt = store.get('shiftAt', CFG.shiftAt);
+CFG.mass = store.get('mass', CFG.mass);
 
 // ---------------------------------------------------------------- state
 let meta = {};
@@ -36,7 +45,14 @@ let OBD = null;                    // OBD-II polling status from the backend (nu
 let V = {};                         // latest decoded values
 let link = false, everLinked = false, source = '', lastMsg = 0, busOn = false;
 const D = {};                       // display-smoothed values
-let longG = 0, lastSpeed = null, lastSpeedT = 0;
+let longG = 0;
+// derived values (not on the bus): acceleration from a speed regression, wheel power, calculated gear
+const spdBuf = [];                       // [t ms, speed m/s]
+let accel = 0, wheelKw = 0, pwrPeak = 0;
+let gearCount = store.get('gearCount', 5);
+let gearMode = store.get('gearMode', 'calc');           // 'calc' (rpm/speed) or 'can' (broadcast signal)
+let gearCal = store.get('gearCal', null) || CFG.gearDefaults.slice();
+let learn = { ratio: 0, since: 0, dirty: false, saved: 0 };
 let gPeak = 0;
 const gTrail = [];
 const hist = [];                    // graph samples [t, rpm, speed, thr, brk, steer]
@@ -191,6 +207,12 @@ function renderSettings() {
   document.querySelectorAll('.caronly').forEach(el => el.classList.toggle('na', CAR.model !== 'impreza'));
   $('o-detail').classList.toggle('busy', carBusy);
   document.querySelectorAll('.step').forEach(st => { st.querySelector('b').textContent = CFG[st.dataset.k].toLocaleString(); });
+  // gear & power
+  pick('o-gearmode', gearMode, v => { gearMode = v; store.set('gearMode', v); renderSettings(); });
+  pick('o-gears', String(gearCount), v => { gearCount = +v; store.set('gearCount', gearCount); renderSettings(); });
+  seg('o-learn', store.get('gearLearn', true), v => { store.set('gearLearn', v); renderSettings(); });
+  const ord = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
+  $('gearcal').textContent = gearCal.slice(0, gearCount).map((r, i) => `${ord[i]} ${Math.round(r)}`).join(' · ') + '  rpm per km/h';
   renderSysinfo();
 }
 document.querySelectorAll('.step').forEach(st => {
@@ -199,7 +221,7 @@ document.querySelectorAll('.step').forEach(st => {
     const k = st.dataset.k, step = +st.dataset.step;
     CFG[k] = clamp(CFG[k] + d * step, +st.dataset.min, +st.dataset.max);
     if (CFG.shiftAt > CFG.redline) { if (k === 'shiftAt') CFG.redline = CFG.shiftAt; else CFG.shiftAt = CFG.redline; }
-    store.set('redline', CFG.redline); store.set('shiftAt', CFG.shiftAt);
+    store.set('redline', CFG.redline); store.set('shiftAt', CFG.shiftAt); store.set('mass', CFG.mass);
     buildSegs(); LANES[0].max = CFG.rpmMax; renderSettings();
   };
   minus.onclick = () => bump(-1);
@@ -209,6 +231,8 @@ const flashDone = b => { b.classList.add('done'); setTimeout(() => b.classList.r
 $('r-trip').onclick = e => { Object.assign(trip, { dist: 0, moveTime: 0, start: null, top: 0, lastT: null }); flashDone(e.currentTarget); };
 $('r-zt').onclick = e => { zt.best = null; zt.run = null; store.set('zt_best', null); flashDone(e.currentTarget); };
 $('r-g').onclick = e => { gPeak = 0; flashDone(e.currentTarget); };
+$('r-pwr').onclick = e => { pwrPeak = 0; flashDone(e.currentTarget); };
+$('r-gears').onclick = e => { gearCal = CFG.gearDefaults.slice(); store.set('gearCal', null); renderSettings(); flashDone(e.currentTarget); };
 $('r-all').onclick = () => {
   SETTINGS = {};
   fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
@@ -246,6 +270,55 @@ function connect() {
 function setBus(on) { busOn = on; try { ws && ws.readyState === 1 && ws.send(JSON.stringify({ bus: on })); } catch { /* reconnecting */ } }
 connect();
 
+// Acceleration = slope of a least-squares line through the last 0.8 s of speed samples.
+// Much less noisy than differencing two readings (OBD speed is whole km/h only).
+function derive(now) {
+  const kmh = V.speed;
+  if (kmh == null) return;
+  // the average of the 4 wheel speeds has finer resolution, but only use it once it's verified
+  const w = [V.wheel_fl, V.wheel_fr, V.wheel_rl, V.wheel_rr].filter(x => x != null);
+  const useWheels = w.length === 4 && meta.wheel_fl && meta.wheel_fl.verified;   // only once confirmed
+  const v = (useWheels ? w.reduce((a, b) => a + b) / 4 : kmh) / 3.6;
+  spdBuf.push([now, v]);
+  while (spdBuf.length && now - spdBuf[0][0] > 800) spdBuf.shift();
+  if (spdBuf.length >= 4) {
+    const n = spdBuf.length, t0 = spdBuf[0][0];
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (const [t, y] of spdBuf) { const x = (t - t0) / 1000; sx += x; sy += y; sxx += x * x; sxy += x * y; }
+    const den = n * sxx - sx * sx;
+    if (den > 1e-6) accel += (clamp((n * sxy - sx * sy) / den, -15, 15) - accel) * 0.35;
+  }
+  longG = accel / 9.81;
+
+  // wheel power (kW): only meaningful when driving forward under power
+  const drag = 0.5 * 1.2 * CFG.cda * v * v, roll = CFG.crr * CFG.mass * 9.81;
+  let p = v * (CFG.mass * accel + drag + roll) / 1000;
+  if (v < 1.5 || (V.throttle ?? 100) < 3 || V.clutch === 1 || V.reverse) p = 0;
+  wheelKw += (Math.max(0, p) - wheelKw) * 0.3;
+  if (wheelKw > pwrPeak && v > 5) pwrPeak = wheelKw;
+  V.wheel_kw = Math.round(wheelKw * 10) / 10;
+  V.wheel_kw_peak = Math.round(pwrPeak);
+
+  // calculated gear from rpm / speed
+  const rpm = rpmOf(V), kmhNow = v * 3.6;
+  let gear = 0;
+  if (kmhNow > 4 && rpm > 600 && V.clutch !== 1) {
+    const ratio = rpm / kmhNow;
+    let best = -1, err = 1;
+    for (let i = 0; i < gearCount; i++) { const e = Math.abs(ratio - gearCal[i]) / gearCal[i]; if (e < err) { err = e; best = i; } }
+    if (err < CFG.gearTol) gear = best + 1;
+    // auto-learn: a steady ratio for 1.2 s under light load nudges the nearest gear towards it
+    if (Math.abs(ratio - learn.ratio) / ratio < 0.02) {
+      if (now - learn.since > 1200 && kmhNow > 15 && rpm > 1200 && err < 0.12 && store.get('gearLearn', true)) {
+        gearCal[best] += (ratio - gearCal[best]) * 0.05;
+        learn.dirty = true;
+      }
+    } else { learn.ratio = ratio; learn.since = now; }
+    if (learn.dirty && now - learn.saved > 20000) { store.set('gearCal', gearCal.map(x => Math.round(x * 10) / 10)); learn.dirty = false; learn.saved = now; }
+  }
+  V.gear_calc = gear;
+}
+
 function onMsg(m) {
   if (m.meta) { meta = m.meta; applyMeta(); return; }
   const now = performance.now();
@@ -265,18 +338,8 @@ function onMsg(m) {
   src.className = 'pill ' + (!link ? 'off' : source === 'demo' ? 'demo' : 'live');
   src.textContent = !link ? (m.error ? 'CAN ERROR' : 'NO CAN') : source === 'demo' ? 'DEMO' : 'LIVE CAN';
 
-  // longitudinal g from speed change
   const spd = V.speed;
-  if (spd != null) {
-    if (lastSpeed != null) {
-      const dt = (now - lastSpeedT) / 1000;
-      if (dt > 0.02) {
-        const a = ((spd - lastSpeed) / 3.6) / dt / 9.81;
-        longG += (clamp(a, -1.5, 1.5) - longG) * 0.25;
-        lastSpeed = spd; lastSpeedT = now;
-      }
-    } else { lastSpeed = spd; lastSpeedT = now; }
-  }
+  derive(now);
 
   // trip
   if (link && spd != null) {
@@ -337,14 +400,15 @@ function renderDash(dt) {
   const thr = smooth('thr', V.throttle ?? 0, dt, 14);
   const brk = smooth('brk', V.brake ?? 0, dt, 14);
   const str = smooth('str', V.steering ?? 0, dt, 10);
-  const trq = smooth('trq', V.torque ?? 0, dt, 10);
+  const pwr = smooth('pwr', V.wheel_kw ?? 0, dt, 6);
   const lat = smooth('lat', V.lat_g ?? 0, dt, 8);
   const lng = smooth('lng', longG, dt, 6);
 
   setText('speed', Math.round(spd).toString());
   setText('rpm', Math.round(rpm).toLocaleString());
   const g = $('gear');
-  const gtxt = V.reverse ? 'R' : V.gear == null ? '–' : V.gear === 0 ? 'N' : String(V.gear);
+  const gv = gearMode === 'calc' ? V.gear_calc : V.gear;
+  const gtxt = V.reverse ? 'R' : gv == null ? '–' : gv === 0 ? 'N' : String(gv);
   setText('gear', gtxt);
   g.classList.toggle('rev', gtxt === 'R');
 
@@ -354,7 +418,7 @@ function renderDash(dt) {
 
   setText('thr', Math.round(thr) + '%'); setW('b-thr', thr / 100);
   setText('brk', Math.round(brk) + '%'); setW('b-brk', brk / 100);
-  setText('trq', Math.round(trq).toString()); setW('b-trq', trq / 250);
+  setText('pwr', Math.round(pwr) + ' kW'); setW('b-pwr', pwr / 150);
   setText('str', Math.abs(Math.round(str)) + '°' + (str > 2 ? 'L' : str < -2 ? 'R' : ''));
   const sf = clamp(Math.abs(str) / 540, 0, 1) * 50, sb = $('b-str');
   sb.style.width = sf + '%'; sb.style.left = str >= 0 ? (50 - sf) + '%' : '50%';
@@ -505,7 +569,8 @@ const ETILES = [   // [signal, label, unit, decimals, barMin, barMax]
   ['coolant', 'COOLANT', '°C', 0, 40, 120], ['oil_temp', 'OIL', '°C', 0, 40, 140],
   ['stft', 'SHORT TRIM', '%', 1, -25, 25], ['ltft', 'LONG TRIM', '%', 1, -25, 25],
   ['voltage', 'BATTERY', 'V', 2, 11, 15], ['fuel_level', 'FUEL', '%', 0, 0, 100],
-  ['ambient', 'OUTSIDE', '°C', 0, -10, 50], ['baro', 'BARO', 'kPa', 0, 80, 105],
+  ['ambient', 'OUTSIDE', '°C', 0, -10, 50], ['gear_calc', 'GEAR (CALC)', '', 0, 0, 6],
+  ['wheel_kw', 'WHEEL POWER', 'kW', 0, 0, 150], ['wheel_kw_peak', 'PEAK POWER', 'kW', 0, 0, 150],
 ];
 const etEls = {};
 for (const [k, label, unit] of ETILES) {

@@ -167,14 +167,21 @@ restart the backend. The frontend accesses signals **by name**, so renaming a si
 - **Settings store:** loads `/api/settings` at startup into `SETTINGS`. `store.get(k, default)` and
   `store.set(k, v)` (debounced POST). Settings live on the backend, not in localStorage, because the
   kiosk Chromium starts with a fresh profile in `/tmp` every boot.
-  Keys: `theme`, `fx`, `autofx`, `particles`, `redline`, `shiftAt`, `cam`, `zt_best`.
+  Keys: `theme`, `fx`, `autofx`, `particles`, `redline`, `shiftAt`, `cam`, `zt_best`, `mass`,
+  `gearMode`, `gearCount`, `gearLearn`, `gearCal`, plus the car-display keys.
 - **`CFG`:** `redline` (6500), `shiftAt` (6000), `rpmMax` (= max(7000, redline+500)), `steerRatio` (15:
   steering wheel deg → road wheel deg for the 3D front wheels), `slipPct` (8: wheel-speed deviation
   flagged as slip).
 - **URL params:** `?keepfx` disables the automatic quality drop (for testing). `?cursor` shows the mouse.
 - **Views** (bottom nav): `drive`, `graphs`, `engine` (OBD-II tiles), `bus`, `settings` (⚙ button). Only the active view renders.
 - **On each WS message (`onMsg`)** it updates `V` (decoded values) and the link/source pill, and computes:
-  - `longG`: derivative of `speed` (EMA, clamped ±1.5 g). It isn't on the bus.
+  - `derive(now)` computes values that aren't on the bus and writes them into `V`:
+    - `accel`/`longG`: slope of a least-squares line through the last 0.8 s of speed, smoothed
+    - `wheel_kw` / `wheel_kw_peak`: virtual dyno, `P = v·(m·a + ½·1.2·CdA·v² + Crr·m·g)` with `CFG.mass`
+      (settings, default 1400 kg), `cda` 0.70, `crr` 0.012. Zero when throttle < 3%, clutch in, reverse or < 1.5 m/s.
+    - `gear_calc`: rpm ÷ km/h matched to `gearCal` (rpm per km/h per gear, within 7%). Defaults are approximate
+      for a 5MT on 205/55R16. Auto-learn nudges the nearest gear when the ratio is steady for 1.2 s, saved as `gearCal`.
+      The gear box shows `gear_calc` unless settings `gearMode` = `can`.
   - **trip:** distance (integrated speed), moving time, top speed, start time
   - **0–100 timer:** state machine `idle → armed (speed < 0.5) → run (speed > 0.8) → done at ≥100 km/h`.
     The best time is saved to settings.

@@ -179,11 +179,14 @@ html.showcursor button, html.showcursor #c3d { cursor: pointer !important; }
 /* engine (OBD-II) tiles */
 #v-engine { grid-template-columns: 1fr; }
 .enginewrap { display: flex; flex-direction: column; gap: calc(var(--u) * 1.2); }
-.egrid { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 1fr; gap: calc(var(--u) * 1); min-height: 0; }
+.egrid { flex: 1; display: grid; grid-template-columns: repeat(6, 1fr); grid-auto-rows: 1fr; gap: calc(var(--u) * 1); min-height: 0; }
 .etile { background: #0a0b0e; border: 1px solid var(--line); border-radius: 5px; padding: calc(var(--u) * 1.2) calc(var(--u) * 1.5);
   display: flex; flex-direction: column; justify-content: space-between; min-height: 0; }
-.etile b { font-size: calc(var(--u) * 5); font-weight: 800; line-height: 1; }
+.etile b { font-size: calc(var(--u) * 4.4); font-weight: 800; line-height: 1; }
 .etile b small { font-size: calc(var(--u) * 1.6); color: var(--dim); font-weight: 400; margin-left: .3em; }
 .etile.na { opacity: .3; }
 .etile .bar { margin-top: calc(var(--u) * .6); }
 .etile .bar > i { background: var(--acc); }
+
+.resets { grid-template-columns: repeat(3, 1fr) !important; }
+#gearcal { font-size: calc(var(--u) * 1.5); letter-spacing: .06em; }
