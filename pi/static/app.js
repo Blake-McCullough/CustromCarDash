@@ -32,6 +32,7 @@ CFG.shiftAt = store.get('shiftAt', CFG.shiftAt);
 
 // ---------------------------------------------------------------- state
 let meta = {};
+let OBD = null;                    // OBD-II polling status from the backend (null = off)
 let V = {};                         // latest decoded values
 let link = false, everLinked = false, source = '', lastMsg = 0, busOn = false;
 const D = {};                       // display-smoothed values
@@ -60,7 +61,7 @@ buildSegs();
 
 document.addEventListener('contextmenu', e => e.preventDefault());
 
-const views = { drive: $('v-drive'), graphs: $('v-graphs'), bus: $('v-bus'), settings: $('v-settings') };
+const views = { drive: $('v-drive'), graphs: $('v-graphs'), engine: $('v-engine'), bus: $('v-bus'), settings: $('v-settings') };
 let view = 'drive';
 document.querySelectorAll('nav [data-view]').forEach(b => b.onclick = () => {
   view = b.dataset.view;
@@ -218,6 +219,7 @@ function renderSysinfo() {
   const n = Object.values(meta).filter(m => !m.verified).length;
   const rows = [
     ['Data source', !link ? 'no CAN link' : source === 'demo' ? 'demo (simulated)' : 'live CAN (can0)'],
+    ['OBD-II polling', obdText()],
     ['CAN frames/s', $('fps').textContent],
     ['Signals', `${Object.keys(meta).length} defined · ${n} unverified`],
     ['Car model', car.modelInfo],
@@ -250,6 +252,7 @@ function onMsg(m) {
   lastMsg = now;
   V = m.v || {};
   source = m.source;
+  OBD = m.obd || null;
   $('fps').textContent = m.fps.toLocaleString();
   $('nids').textContent = m.nids;
 
@@ -493,6 +496,44 @@ function renderOff() {
   setText('o-top', Math.round(trip.top) + ' KM/H');
 }
 
+// ---------------------------------------------------------------- engine (OBD-II) view
+const ETILES = [   // [signal, label, unit, decimals, barMin, barMax]
+  ['rpm', 'RPM', '', 0, 0, 7000], ['speed', 'SPEED', 'km/h', 0, 0, 180],
+  ['throttle', 'THROTTLE', '%', 0, 0, 100], ['engine_load', 'LOAD', '%', 0, 0, 100],
+  ['map_kpa', 'MANIFOLD', 'kPa', 0, 0, 110], ['maf', 'AIR FLOW', 'g/s', 1, 0, 120],
+  ['timing_adv', 'TIMING', '°', 1, -10, 50], ['intake_temp', 'INTAKE', '°C', 0, -10, 80],
+  ['coolant', 'COOLANT', '°C', 0, 40, 120], ['oil_temp', 'OIL', '°C', 0, 40, 140],
+  ['stft', 'SHORT TRIM', '%', 1, -25, 25], ['ltft', 'LONG TRIM', '%', 1, -25, 25],
+  ['voltage', 'BATTERY', 'V', 2, 11, 15], ['fuel_level', 'FUEL', '%', 0, 0, 100],
+  ['ambient', 'OUTSIDE', '°C', 0, -10, 50], ['baro', 'BARO', 'kPa', 0, 80, 105],
+];
+const etEls = {};
+for (const [k, label, unit] of ETILES) {
+  const d = document.createElement('div');
+  d.className = 'etile';
+  d.innerHTML = `<div class="label">${label}</div><b>--<small>${unit}</small></b><div class="bar"><i></i></div>`;
+  $('egrid').appendChild(d);
+  etEls[k] = d;
+}
+function obdText() {
+  if (!OBD) return 'off (start the backend with --obd)';
+  const n = OBD.supported ? OBD.supported.length : 0;
+  return `${OBD.status}${n ? ` · ${n} values · ${OBD.rate}/s` : ''}`;
+}
+function renderEngine() {
+  setText('obdstate', 'OBD-II: ' + obdText());
+  for (const [k, , unit, dp, lo, hi] of ETILES) {
+    const el = etEls[k], v = V[k];
+    const fromObd = meta[k] && meta[k].src === 'obd';
+    el.classList.toggle('na', v == null);
+    const txt = v == null ? '--' : Number(v).toFixed(dp);
+    const b = el.querySelector('b');
+    if (b.firstChild.textContent !== txt) b.firstChild.textContent = txt;
+    el.querySelector('.bar > i').style.width = v == null ? '0%' : (clamp((v - lo) / (hi - lo), 0, 1) * 100).toFixed(1) + '%';
+    el.querySelector('.label').classList.toggle('unv', !fromObd && meta[k] && !meta[k].verified);
+  }
+}
+
 // ---------------------------------------------------------------- main loop
 let lastT = performance.now(), frames = 0, fpsT = lastT, slowSecs = 0, slowCar = 0;
 function loop(t) {
@@ -500,6 +541,7 @@ function loop(t) {
   lastT = t;
   if (view === 'drive') renderDash(dt);
   else if (view === 'graphs') drawGraphs();
+  else if (view === 'engine') renderEngine();
   renderOff();
 
   frames++;

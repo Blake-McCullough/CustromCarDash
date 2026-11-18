@@ -154,6 +154,14 @@
   </section>
 
   <!-- ============ BUS ============ -->
+  <!-- ============ ENGINE (OBD-II) ============ -->
+  <section id="v-engine" class="view">
+    <div class="card enginewrap">
+      <div class="rowsplit"><div class="label">ENGINE · OBD-II</div><div class="dim" id="obdstate">OBD polling off</div></div>
+      <div class="egrid" id="egrid"></div>
+    </div>
+  </section>
+
   <section id="v-bus" class="view">
     <div class="card buswrap">
       <div class="rowsplit"><div class="label">CAN BUS · EVERY ID</div><div class="dim">bytes flash red when they change · do one thing at a time in the car and watch</div></div>
@@ -165,6 +173,7 @@
 <nav>
   <button data-view="drive" class="on">DRIVE</button>
   <button data-view="graphs">GRAPHS</button>
+  <button data-view="engine">ENGINE</button>
   <button data-view="bus">BUS</button>
   <div class="spacer"></div>
   <span class="dim" id="unv"></span>

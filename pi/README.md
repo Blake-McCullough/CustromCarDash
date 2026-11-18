@@ -55,6 +55,34 @@ Only re-run `setup_pi.sh` if the installer itself changed.
 - If the screen shows the wrong resolution, add `video=HDMI-A-1:1024x600@60` (your screen's
   resolution) to the end of the single line in `/boot/firmware/cmdline.txt`, then reboot.
 
+## OBD-II live data (optional, `OBD=1`)
+By default the dash only **listens** to the car's own broadcast messages. With OBD mode it also
+**asks** the engine computer for standard OBD-II values, the same requests every scan tool and ELM327
+dongle sends: RPM, speed, throttle, load, manifold pressure, air flow, timing, intake/coolant/oil temp,
+fuel trims, battery voltage, fuel level, outside temp and baro. They show on the **ENGINE** tab. RPM,
+speed, throttle and coolant also feed the main dash. OBD values count as verified, so they replace the
+unverified broadcast decodes for those signals.
+
+```bash
+sudo OBD=1 ./setup_pi.sh && sudo reboot          # add OSC=8000000 if your crystal says 8.000
+```
+
+What changes, and the safety limits:
+- `can0` comes up in **normal mode** instead of listen-only, so the HAT can transmit and ACK.
+- The code only ever builds **service 01 "read current data"** requests (ID `0x7DF`), from a fixed list.
+  It never clears codes, writes or resets anything.
+- About 40 requests a second, the normal pace for a scan tool.
+- If 5 sends in a row fail, it **stops transmitting** until the next restart.
+- `can0` has no auto-restart, so a wrong crystal or bitrate makes the HAT go silent instead of
+  repeatedly disturbing the bus.
+
+**First test:** engine **off**, key to **ON** (bus awake, car parked). Watch the dash warning lights.
+The ENGINE tab header should say `polling · N values`. If any warning light comes on, unplug and
+re-check the crystal setting. Only then start the engine.
+
+To go back to listen-only: `sudo ./setup_pi.sh && sudo reboot`.
+Try it without the car: `python3 dash_server.py --demo --obd` (a simulated engine computer answers).
+
 ## First time in the car
 1. Engine **off**, plug in, turn the key to ACC/ON. Check the car's warning lights stay normal.
 2. Start the engine. The header should say **LIVE CAN** with a few thousand FR/S.

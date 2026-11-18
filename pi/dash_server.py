@@ -8,6 +8,7 @@ signals in signals.json, and streams them to the dash page over a WebSocket.
   python3 dash_server.py            # live from can0
   python3 dash_server.py --demo     # simulated drive, no car needed
   python3 dash_server.py --cursor   # show the mouse pointer (add to either)
+  python3 dash_server.py --obd      # also poll standard OBD-II data (transmits requests; see README)
 Open http://localhost:8080
 """
 import argparse
@@ -69,6 +70,137 @@ def encode_into(s, value, buf):
         buf[sb:sb + n] = (raw & width).to_bytes(n, order)
 
 
+# ---------------------------------------------------------------- OBD-II polling (opt-in: --obd)
+# Standard OBD-II "service 01" (show current data) over CAN, the same requests every scan tool
+# and ELM327 dongle sends: functional request on 0x7DF, ECU replies on 0x7E8-0x7EF.
+# Only service 01 is ever built here. Nothing that clears codes, writes or resets.
+OBD_REQ_ID = 0x7DF
+OBD_RESP_IDS = range(0x7E8, 0x7F0)
+OBD_GAP = 0.025            # s between requests (~40 requests/s, normal scan-tool pace)
+OBD_MAX_SEND_FAILS = 5     # consecutive send errors -> stop transmitting for good (until restart)
+
+# pid: (signal name, decode(A, B), encode(value) -> [A, B], unit, fast?)
+OBD_PIDS = {
+    0x0C: ("rpm",         lambda a, b: (a * 256 + b) / 4,     lambda v: divmod(int(v * 4) & 0xFFFF, 256), "rpm",  True),
+    0x0D: ("speed",       lambda a, b: a,                     lambda v: (int(v) & 0xFF, 0),               "km/h", True),
+    0x11: ("throttle",    lambda a, b: a * 100 / 255,         lambda v: (int(v * 255 / 100) & 0xFF, 0),   "%",    True),
+    0x04: ("engine_load", lambda a, b: a * 100 / 255,         lambda v: (int(v * 255 / 100) & 0xFF, 0),   "%",    False),
+    0x0B: ("map_kpa",     lambda a, b: a,                     lambda v: (int(v) & 0xFF, 0),               "kPa",  False),
+    0x05: ("coolant",     lambda a, b: a - 40,                lambda v: (int(v + 40) & 0xFF, 0),          "°C",   False),
+    0x0F: ("intake_temp", lambda a, b: a - 40,                lambda v: (int(v + 40) & 0xFF, 0),          "°C",   False),
+    0x0E: ("timing_adv",  lambda a, b: a / 2 - 64,            lambda v: (int((v + 64) * 2) & 0xFF, 0),    "°",    False),
+    0x10: ("maf",         lambda a, b: (a * 256 + b) / 100,   lambda v: divmod(int(v * 100) & 0xFFFF, 256), "g/s", False),
+    0x06: ("stft",        lambda a, b: (a - 128) * 100 / 128, lambda v: (int(v * 128 / 100 + 128) & 0xFF, 0), "%", False),
+    0x07: ("ltft",        lambda a, b: (a - 128) * 100 / 128, lambda v: (int(v * 128 / 100 + 128) & 0xFF, 0), "%", False),
+    0x2F: ("fuel_level",  lambda a, b: a * 100 / 255,         lambda v: (int(v * 255 / 100) & 0xFF, 0),   "%",    False),
+    0x42: ("voltage",     lambda a, b: (a * 256 + b) / 1000,  lambda v: divmod(int(v * 1000) & 0xFFFF, 256), "V",  False),
+    0x46: ("ambient",     lambda a, b: a - 40,                lambda v: (int(v + 40) & 0xFF, 0),          "°C",   False),
+    0x33: ("baro",        lambda a, b: a,                     lambda v: (int(v) & 0xFF, 0),               "kPa",  False),
+    0x5C: ("oil_temp",    lambda a, b: a - 40,                lambda v: (int(v + 40) & 0xFF, 0),          "°C",   False),
+}
+OBD_TWO_BYTE = {0x0C, 0x10, 0x42}
+OBD_PROBES = (0x00, 0x20, 0x40)      # "which PIDs do you support?" bitmaps
+
+
+def obd_request(pid):
+    """The only frame this program ever transmits: service 01, one PID."""
+    assert pid in OBD_PIDS or pid in OBD_PROBES
+    return bytes([0x02, 0x01, pid, 0x55, 0x55, 0x55, 0x55, 0x55])
+
+
+def pids_from_bitmap(base, data4):
+    out = set()
+    for i in range(32):
+        if data4[i // 8] & (0x80 >> (i % 8)):
+            out.add(base + i + 1)
+    return out
+
+
+async def obd_poller(state, send):
+    """Probe supported PIDs, then poll them. `send(bytes)` returns True if the frame went out."""
+    o = state.obd
+    fails = 0
+
+    async def tx(pid):
+        nonlocal fails
+        ok = await send(obd_request(pid))
+        if ok:
+            fails = 0
+            o["sent"] += 1
+            return True
+        fails += 1
+        if fails >= OBD_MAX_SEND_FAILS:
+            o["status"] = "stopped: send failed (check wiring, crystal/bitrate). Restart to retry."
+            raise asyncio.CancelledError
+        return False
+
+    try:
+        while True:
+            # 1) discover supported PIDs
+            o.update(status="probing", supported=[])
+            state.obd_bitmaps.clear()
+            for _ in range(3):
+                await tx(0x00)
+                await asyncio.sleep(0.25)
+                if 0x00 in state.obd_bitmaps:
+                    break
+            if 0x00 not in state.obd_bitmaps:
+                o["status"] = "no OBD response (ignition on?)"
+                await asyncio.sleep(5)
+                continue
+            for base in (0x20, 0x40):
+                if base in state.obd_supported_raw():
+                    await tx(base)
+                    await asyncio.sleep(0.25)
+            sup = state.obd_supported_raw()
+            pids = [p for p in OBD_PIDS if p in sup]
+            state.set_obd_pids(pids)
+            o.update(status="polling", supported=[OBD_PIDS[p][0] for p in pids])
+
+            # 2) poll: fast PIDs every cycle, one slow PID per cycle (round robin)
+            fast = [p for p in pids if OBD_PIDS[p][4]]
+            slow = [p for p in pids if not OBD_PIDS[p][4]] or [None]
+            i = 0
+            while True:
+                for p in fast + [slow[i % len(slow)]]:
+                    if p is not None:
+                        await tx(p)
+                        await asyncio.sleep(OBD_GAP)
+                i += 1
+                if time.monotonic() - state.obd_last_resp > 5:   # ECU went quiet: start over
+                    o["status"] = "ECU stopped answering, re-probing"
+                    break
+    finally:
+        state.set_obd_pids([])
+
+
+def fake_ecu(state):
+    """Demo mode: answers OBD requests from the simulated drive."""
+    async def send(frame):
+        pid = frame[2]
+        await asyncio.sleep(0.004)
+        now = time.monotonic()
+        if pid in OBD_PROBES:
+            bits = bytearray(4)
+            for p in OBD_PIDS:
+                if pid < p <= pid + 32:
+                    i = p - pid - 1
+                    bits[i // 8] |= 0x80 >> (i % 8)
+            if pid + 0x20 in OBD_PROBES:            # "next bitmap supported" bit
+                bits[3] |= 0x01
+            state.on_frame(0x7E8, bytes([0x06, 0x41, pid, *bits, 0x55]), now)
+            return True
+        name, _, enc, _, _ = OBD_PIDS[pid]
+        v = state.sim.get(name)
+        if v is None:
+            return True
+        a, b = enc(v)
+        n = 4 if pid in OBD_TWO_BYTE else 3
+        state.on_frame(0x7E8, bytes([n, 0x41, pid, a, b, 0x55, 0x55, 0x55]), now)
+        return True
+    return send
+
+
 # ---------------------------------------------------------------- state
 class BusState:
     def __init__(self, sigs, by_id):
@@ -80,6 +212,42 @@ class BusState:
         self.last_frame = 0.0
         self.source = "live"
         self.error = ""
+        # OBD polling state
+        self.obd = {"status": "off", "supported": [], "sent": 0, "resp": 0, "rate": 0}
+        self.obd_bitmaps = {}
+        self.obd_names = set()          # signals currently coming from OBD (override broadcast decodes)
+        self.obd_last_resp = 0.0
+        self.obd_win = 0
+        self.meta_ver = 0
+        self.sim = {}                   # demo: current simulated values (for the fake ECU)
+
+    def obd_supported_raw(self):
+        out = set()
+        for base, bits in self.obd_bitmaps.items():
+            out |= pids_from_bitmap(base, bits)
+        return out
+
+    def set_obd_pids(self, pids):
+        self.obd_names = {OBD_PIDS[p][0] for p in pids}
+        self.meta_ver += 1
+
+    def on_obd(self, data, now):
+        n = data[0]                                     # single-frame length
+        if n < 2 or n > 7 or data[1] != 0x41:
+            return
+        pid = data[2]
+        if pid in OBD_PROBES and n >= 6:
+            self.obd_bitmaps[pid] = bytes(data[3:7])
+        elif pid in OBD_PIDS:
+            name, dec = OBD_PIDS[pid][0], OBD_PIDS[pid][1]
+            a = data[3] if n >= 3 else 0
+            b = data[4] if n >= 4 else 0
+            self.values[name] = round(dec(a, b), 3)
+        else:
+            return
+        self.obd_last_resp = now
+        self.obd_win += 1
+        self.obd["resp"] += 1
 
     def on_frame(self, arb_id, data, now):
         e = self.ids.get(arb_id)
@@ -93,13 +261,18 @@ class BusState:
         e["win"] += 1
         self.window += 1
         self.last_frame = now
+        if arb_id in OBD_RESP_IDS and len(data) >= 3:
+            self.on_obd(data, now)
         for name, s in self.by_id.get(arb_id, ()):
+            if name in self.obd_names:                  # OBD value wins over an unverified decode
+                continue
             v = decode(s, data)
             if v is not None:
                 self.values[name] = v
 
     def roll_rates(self):
         self.fps, self.window = self.window, 0
+        self.obd["rate"], self.obd_win = self.obd_win, 0
         for e in self.ids.values():
             e["hz"], e["win"] = e["win"], 0
 
@@ -113,6 +286,7 @@ class BusState:
             "error": self.error,
             "link": (now - self.last_frame) < LINK_TIMEOUT,
             "v": self.values,
+            "obd": self.obd,
         }
         if with_bus:
             out["ids"] = [[f"{i:03X}" if i <= 0x7FF else f"{i:08X}",
@@ -122,12 +296,16 @@ class BusState:
         return out
 
     def meta(self):
-        return {k: {"unit": s.get("unit", ""), "verified": s.get("verified", False), "id": s["id"]}
-                for k, s in self.sigs.items()}
+        m = {k: {"unit": s.get("unit", ""), "verified": s.get("verified", False), "id": s["id"], "src": "can"}
+             for k, s in self.sigs.items()}
+        for pid, (name, _, _, unit, _) in OBD_PIDS.items():
+            if name in self.obd_names:                  # standard OBD-II values are verified by definition
+                m[name] = {"unit": unit, "verified": True, "id": "0x7E8", "src": "obd", "pid": f"01 {pid:02X}"}
+        return m
 
 
 # ---------------------------------------------------------------- sources
-async def live_source(state, channel):
+async def live_source(state, channel, obd=False):
     import can
     while True:
         try:
@@ -139,6 +317,16 @@ async def live_source(state, channel):
         state.error = ""
         reader = can.AsyncBufferedReader()
         notifier = can.Notifier(bus, [reader], loop=asyncio.get_running_loop())
+        poller = None
+        if obd:
+            async def send(frame, bus=bus):
+                try:
+                    await asyncio.to_thread(bus.send, can.Message(arbitration_id=OBD_REQ_ID, data=frame,
+                                                                   is_extended_id=False), 0.05)
+                    return True
+                except can.CanError:
+                    return False
+            poller = asyncio.create_task(obd_poller(state, send))
         try:
             async for msg in reader:
                 if msg.is_error_frame or msg.is_remote_frame:
@@ -147,14 +335,18 @@ async def live_source(state, channel):
         except Exception as ex:
             state.error = f"{channel}: {ex}"
         finally:
+            if poller:
+                poller.cancel()
             notifier.stop()
             bus.shutdown()
         await asyncio.sleep(1)
 
 
-async def demo_source(state):
+async def demo_source(state, obd=False):
     """A looping simulated drive: idle, pull through the gears, corner, brake."""
     state.source = "demo"
+    if obd:
+        asyncio.create_task(obd_poller(state, fake_ecu(state)))
     noise = {i: bytearray(random.getrandbits(8) for _ in range(8))
              for i in (0x0D0, 0x0D1, 0x0D4, 0x141, 0x144, 0x152, 0x360, 0x361, 0x501, 0x601, 0x630, 0x6D1)}
     ratios = [3.454, 1.947, 1.296, 0.972, 0.738]   # approx 5-speed
@@ -206,6 +398,11 @@ async def demo_source(state):
             "reverse": 0, "ambient": 24, "high_beam": 0, "low_beam": 1, "handbrake": 1 if t > 41 else 0,
             "coolant": 89 + 2 * math.sin(now / 40), "clutch": clutch,
         }
+        vals.update({"engine_load": 15 + thr * 0.8, "map_kpa": 30 + thr * 0.7, "intake_temp": 31,
+                     "timing_adv": 28 - thr * 0.15, "maf": 2.5 + rpm / 6500 * thr * 0.9, "stft": 1.6 * math.sin(now),
+                     "ltft": -2.3, "fuel_level": 62, "voltage": 14.1 + 0.1 * math.sin(now / 3), "baro": 101,
+                     "oil_temp": 96})
+        state.sim = vals
         frames = {}
         for name, s in state.sigs.items():
             buf = frames.setdefault(s["_id"], bytearray(8))
@@ -230,12 +427,21 @@ async def rate_task(state):
 async def push_task(app):
     state = app["state"]
     n = 0
+    meta_sent = 0
     while True:
         await asyncio.sleep(PUSH_INTERVAL)
         n += 1
         clients = app["clients"]
         if not clients:
             continue
+        if state.meta_ver != meta_sent:
+            meta_sent = state.meta_ver
+            m = json.dumps({"meta": state.meta()})
+            for ws in list(clients):
+                try:
+                    await ws.send_str(m)
+                except Exception:
+                    clients.pop(ws, None)
         lite = json.dumps(state.snapshot(False))
         full = json.dumps(state.snapshot(True)) if n % 5 == 0 else None   # bus table at 5 Hz
         for ws, wants_bus in list(clients.items()):
@@ -318,6 +524,8 @@ def main():
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--signals", default=str(HERE / "signals.json"))
     ap.add_argument("--cursor", action="store_true", help="show the mouse cursor (hidden by default for touch screens)")
+    ap.add_argument("--obd", action="store_true",
+                    help="poll standard OBD-II PIDs (TRANSMITS requests; can0 must NOT be listen-only)")
     args = ap.parse_args()
 
     sigs, by_id = load_signals(args.signals)
@@ -333,7 +541,9 @@ def main():
 
     async def start_bg(app):
         st = app["state"]
-        src = demo_source(st) if args.demo else live_source(st, args.channel)
+        if args.obd:
+            st.obd["status"] = "starting"
+        src = demo_source(st, args.obd) if args.demo else live_source(st, args.channel, args.obd)
         app["tasks"] = [asyncio.create_task(c) for c in (src, rate_task(st), push_task(app))]
 
     async def stop_bg(app):
@@ -342,7 +552,8 @@ def main():
 
     app.on_startup.append(start_bg)
     app.on_cleanup.append(stop_bg)
-    print(f"Dash on http://{args.host}:{args.port}  ({'demo' if args.demo else args.channel})", flush=True)
+    mode = ("demo" if args.demo else args.channel) + (", OBD polling" if args.obd else "")
+    print(f"Dash on http://{args.host}:{args.port}  ({mode})", flush=True)
     web.run_app(app, host=args.host, port=args.port, print=None)
 
 

@@ -42,8 +42,13 @@ CAN bus, and triggered Hill Start Assist and emissions warning lights.
 5. Termination resistors **off** on every board. The car's bus is already terminated (~60–90 Ω measured).
 6. Never connect OBD pin 16 (+12 V) to any board.
 
-If a feature ever needs to *send* (e.g. OBD-II PID requests because a gateway blocks broadcast traffic),
-treat it as a deliberate, opt-in mode that the user must confirm. Don't make it a default.
+**The one exception: OBD-II polling** (`dash_server.py --obd`, installed with `sudo OBD=1 ./setup_pi.sh`).
+It's opt-in and never the default. It brings can0 up in normal mode (no `listen-only`, no
+`restart-ms`) and transmits only service 01 PID requests on 0x7DF. Guards in code:
+`obd_request()` asserts the PID is in `OBD_PIDS` or the support-bitmap probes, the service byte is
+hard-coded 0x01, requests are spaced 25 ms apart, and 5 consecutive send failures stop transmitting
+until a restart. Keep all of that if you change the poller. Any other kind of transmit needs the
+user's explicit confirmation.
 
 ---
 
@@ -93,7 +98,8 @@ car CAN (500k) → RS485 CAN HAT (MCP2515) → Linux SocketCAN can0 (listen-only
 ### 4.1 `dash_server.py`
 - **Dependencies:** `aiohttp`, `python-can` (only imported in live mode; demo needs aiohttp only).
 - **CLI:** `--demo` (simulated drive), `--channel can0`, `--host 127.0.0.1`, `--port 8080`,
-  `--signals path`, `--cursor` (show the mouse pointer; the page hides it by default for touch).
+  `--signals path`, `--cursor` (show the mouse pointer; the page hides it by default for touch),
+  `--obd` (opt-in OBD-II polling, see 4.2b).
 - **`load_signals()`** parses `signals.json`, ignoring keys starting with `_`. Builds `by_id` (CAN ID →
   list of signals). `mask` strings like `"0x3FFF"` are parsed with `int(x, 0)`.
 - **`decode(sig, data)`** → value:
@@ -127,7 +133,19 @@ car CAN (500k) → RS485 CAN HAT (MCP2515) → Linux SocketCAN can0 (listen-only
   ```
   `ids` is included only on every 5th push (5 Hz), and only for clients that asked for it.
   `ageMs` = ms since each byte last changed (99999 = never).
+- Snapshots also carry `"obd": {"status", "supported": [names], "sent", "resp", "rate"}` (status is `"off"`
+  unless started with `--obd`). When OBD support changes, the server re-sends `{"meta": ...}`. OBD-backed
+  signals have `"src": "obd", "verified": true, "id": "0x7E8"`. Broadcast signals have `"src": "can"`.
 - Client → server: `{"bus": true|false}` turns the `ids` table on or off for that client (the BUS tab sends it).
+
+### 4.2b OBD-II polling (`--obd`)
+`OBD_PIDS` maps PID → (signal name, decode, encode-for-demo, unit, fast?). The poller probes support
+bitmaps (PIDs 0x00/0x20/0x40), then loops: every fast PID (rpm 0x0C, speed 0x0D, throttle 0x11) plus one
+slow PID per cycle, round robin. Responses (0x7E8–0x7EF, single frame, byte1 = 0x41) are parsed in
+`BusState.on_obd()`. Names in `obd_names` skip the broadcast decode in `on_frame()`, so OBD wins.
+If no response arrives for 5 s, it re-probes. In demo mode, `fake_ecu()` answers from `state.sim`.
+Extra signal names (not in signals.json): `engine_load, map_kpa, intake_temp, timing_adv, maf, stft, ltft,
+fuel_level, voltage, baro, oil_temp`. The frontend shows them on the **ENGINE** tab (`ETILES` in app.js).
 
 ### 4.3 `signals.json`
 Each entry is `name: {id, start_byte, length, endian?, signed?, shift?, mask?, scale?, offset?, unit, verified}`.
@@ -154,7 +172,7 @@ restart the backend. The frontend accesses signals **by name**, so renaming a si
   steering wheel deg → road wheel deg for the 3D front wheels), `slipPct` (8: wheel-speed deviation
   flagged as slip).
 - **URL params:** `?keepfx` disables the automatic quality drop (for testing). `?cursor` shows the mouse.
-- **Views** (bottom nav): `drive`, `graphs`, `bus`, `settings` (⚙ button). Only the active view renders.
+- **Views** (bottom nav): `drive`, `graphs`, `engine` (OBD-II tiles), `bus`, `settings` (⚙ button). Only the active view renders.
 - **On each WS message (`onMsg`)** it updates `V` (decoded values) and the link/source pill, and computes:
   - `longG`: derivative of `speed` (EMA, clamped ±1.5 g). It isn't on the bus.
   - **trip:** distance (integrated speed), moving time, top speed, start time
@@ -267,5 +285,5 @@ and `Z`, and refuses `t/T/r/R`. On the Pi: `slcand -o -c -s6 -S 921600 /dev/ttyU
 - Reversing camera (USB capture of composite video, switched on by the `reverse` signal) and
   dashcam recording were discussed but deliberately left out for now.
 - Bluetooth music output through a USB DAC to the head unit's AUX was discussed but not built.
-- If the OBD port turns out to be gateway-filtered, the options are an opt-in OBD-II PID polling mode
-  (requires transmitting, see the safety rules) or tapping CAN behind the cluster or head unit.
+- OBD-II polling is built (`--obd`) but not yet tested on the real car. If the OBD port turns out to be
+  gateway-filtered for broadcast traffic, OBD polling still works, because the gateway answers diagnostic requests.
