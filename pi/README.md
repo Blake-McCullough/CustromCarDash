@@ -1,13 +1,13 @@
-# Impreza Dash (Raspberry Pi 5 + RS485 CAN HAT)
+# Impreza Dash (Raspberry Pi 4/5 + RS485 CAN HAT)
 
 3D wireframe car, speed/RPM/gear, shift lights, pedals, steering, G-meter, wheel speeds with slip
 warning, trip stats, 0–100 timer, live graphs, and a raw CAN bus viewer. Runs full-screen on boot.
 
 ## Hardware
-- Raspberry Pi 5 (2 GB is enough) + Active Cooler
+- Raspberry Pi 5 (2 GB is enough) + Active Cooler, **or a Raspberry Pi 4** (see the Pi 4 notes below)
 - Waveshare **RS485 CAN HAT** (MCP2515, 3.3 V)
 - Your HDMI + USB touch screen
-- 12 V → 5 V **5 A** converter on an ignition-switched (ACC), fused circuit
+- 12 V → 5 V converter on an ignition-switched (ACC), fused circuit: **5 A** for a Pi 5, **3 A** for a Pi 4
 
 ### HAT settings
 - CAN **termination DIP switch: OFF** (the car's bus is already terminated)
@@ -18,13 +18,17 @@ warning, trip stats, 0–100 timer, live graphs, and a raw CAN bus viewer. Runs 
 |---|---|---|
 | H | 6 | Green |
 | L | 14 | Green/White |
-| GND (Pi GND pin) | 5 | Light blue |
+| GND (any Pi GND pin, e.g. physical pin 6) | 5 | Light blue |
+| A, B | not used (RS485) | |
 
 Twist the H/L pair. **Never connect OBD pin 16 (red, +12 V)** to the HAT. Tape off every unused wire.
 
 ## Install (fresh Raspberry Pi OS Lite 64-bit)
+Flash **Raspberry Pi OS Lite (64-bit)** with Raspberry Pi Imager. In its settings, set the hostname (e.g.
+`dash`), a user, Wi-Fi, and enable SSH. Boot the Pi, then `ssh <user>@dash.local`:
 ```bash
-git clone <your repo>  ~/CustromCarDash      # or copy the folder over
+sudo apt install -y git
+git clone https://github.com/Blake-McCullough/CustromCarDash.git ~/CustromCarDash
 cd ~/CustromCarDash/pi
 sudo ./setup_pi.sh                 # crystal 12 MHz
 # sudo OSC=8000000 ./setup_pi.sh   # crystal 8 MHz
@@ -36,6 +40,48 @@ or acknowledges anything on the car's bus.
 
 **Bench test first, without the car:** `sudo DEMO=1 ./setup_pi.sh` runs on simulated data.
 Re-run without `DEMO=1` when you go live.
+
+## Updating
+```bash
+cd ~/CustromCarDash && git pull
+sudo systemctl restart impreza-dash      # then reboot, or reload the page from ⚙
+```
+Only re-run `setup_pi.sh` if the installer itself changed.
+
+## Raspberry Pi 4 notes
+- Screen: use **micro-HDMI port 0** (the one next to the USB-C power socket).
+- It has a weaker GPU than a Pi 5. In ⚙ Settings, set **Car → Detail: LOW**, and if needed
+  **Glow effects: LOW** and **Particles: OFF**.
+- If the screen shows the wrong resolution, add `video=HDMI-A-1:1024x600@60` (your screen's
+  resolution) to the end of the single line in `/boot/firmware/cmdline.txt`, then reboot.
+
+## OBD-II live data (optional, `OBD=1`)
+By default the dash only **listens** to the car's own broadcast messages. With OBD mode it also
+**asks** the engine computer for standard OBD-II values, the same requests every scan tool and ELM327
+dongle sends: RPM, speed, throttle, load, manifold pressure, air flow, timing, intake/coolant/oil temp,
+fuel trims, battery voltage, fuel level, outside temp and baro. They show on the **ENGINE** tab. RPM,
+speed, throttle and coolant also feed the main dash. OBD values count as verified, so they replace the
+unverified broadcast decodes for those signals.
+
+```bash
+sudo OBD=1 ./setup_pi.sh && sudo reboot          # add OSC=8000000 if your crystal says 8.000
+```
+
+What changes, and the safety limits:
+- `can0` comes up in **normal mode** instead of listen-only, so the HAT can transmit and ACK.
+- The code only ever builds **service 01 "read current data"** requests (ID `0x7DF`), from a fixed list.
+  It never clears codes, writes or resets anything.
+- About 40 requests a second, the normal pace for a scan tool.
+- If 5 sends in a row fail, it **stops transmitting** until the next restart.
+- `can0` has no auto-restart, so a wrong crystal or bitrate makes the HAT go silent instead of
+  repeatedly disturbing the bus.
+
+**First test:** engine **off**, key to **ON** (bus awake, car parked). Watch the dash warning lights.
+The ENGINE tab header should say `polling · N values`. If any warning light comes on, unplug and
+re-check the crystal setting. Only then start the engine.
+
+To go back to listen-only: `sudo ./setup_pi.sh && sudo reboot`.
+Try it without the car: `python3 dash_server.py --demo --obd` (a simulated engine computer answers).
 
 ## First time in the car
 1. Engine **off**, plug in, turn the key to ACC/ON. Check the car's warning lights stay normal.

@@ -4,6 +4,7 @@
 #   sudo ./setup_pi.sh                 # normal install
 #   sudo OSC=8000000 ./setup_pi.sh     # if your HAT's crystal says 8.000 (default 12 MHz)
 #   sudo DEMO=1 ./setup_pi.sh          # run the dash on simulated data (bench testing)
+#   sudo OBD=1 ./setup_pi.sh           # ALSO poll standard OBD-II data (the HAT transmits requests)
 # Safe to re-run.
 set -euo pipefail
 
@@ -13,10 +14,11 @@ USER_HOME="$(getent passwd "$USER_NAME" | cut -d: -f6)"
 PI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OSC="${OSC:-12000000}"
 DEMO="${DEMO:-0}"
+OBD="${OBD:-0}"
 BOOT=/boot/firmware
 [[ -d $BOOT ]] || BOOT=/boot
 
-echo "==> Installing for user '$USER_NAME', dash in $PI_DIR (CAN crystal ${OSC} Hz, demo=$DEMO)"
+echo "==> Installing for user '$USER_NAME', dash in $PI_DIR (CAN crystal ${OSC} Hz, demo=$DEMO, obd=$OBD)"
 
 # ------------------------------------------------------------------ packages
 apt-get update
@@ -43,10 +45,20 @@ for opt in quiet loglevel=3 logo.nologo vt.global_cursor_default=0 consoleblank=
   grep -qw -- "$opt" "$CMD" || sed -i "1 s/\$/ $opt/" "$CMD"
 done
 
-# ------------------------------------------------------------------ can0: up, LISTEN-ONLY, 500 kbit/s
-cat > /etc/systemd/system/can0.service <<'EOF'
+# ------------------------------------------------------------------ can0 at 500 kbit/s
+# Default: LISTEN-ONLY (the HAT can never transmit or ACK).
+# OBD=1: normal mode so the dash can send OBD-II requests. No auto-restart from bus-off, so a
+#        wrong crystal/bitrate makes the controller go silent instead of repeatedly disturbing the bus.
+if [[ "$OBD" == "1" ]]; then
+  CAN_UP="/sbin/ip link set can0 up type can bitrate 500000"
+  CAN_DESC="can0 up (500 kbit/s, normal mode for OBD-II polling)"
+else
+  CAN_UP="/sbin/ip link set can0 up type can bitrate 500000 listen-only on restart-ms 100"
+  CAN_DESC="can0 up (500 kbit/s, listen-only)"
+fi
+cat > /etc/systemd/system/can0.service <<EOF
 [Unit]
-Description=can0 up (500 kbit/s, listen-only)
+Description=$CAN_DESC
 BindsTo=sys-subsystem-net-devices-can0.device
 After=sys-subsystem-net-devices-can0.device
 
@@ -54,7 +66,7 @@ After=sys-subsystem-net-devices-can0.device
 Type=oneshot
 RemainAfterExit=yes
 ExecStartPre=-/sbin/ip link set can0 down
-ExecStart=/sbin/ip link set can0 up type can bitrate 500000 listen-only on restart-ms 100
+ExecStart=$CAN_UP
 ExecStop=/sbin/ip link set can0 down
 
 [Install]
@@ -64,6 +76,7 @@ EOF
 # ------------------------------------------------------------------ dash backend
 EXTRA=""
 [[ "$DEMO" == "1" ]] && EXTRA="--demo"
+[[ "$OBD" == "1" ]] && EXTRA="$EXTRA --obd"
 cat > /etc/systemd/system/impreza-dash.service <<EOF
 [Unit]
 Description=Impreza dash backend
