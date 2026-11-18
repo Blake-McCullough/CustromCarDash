@@ -12,7 +12,9 @@
 
   LISTEN-ONLY: the ESP32 never transmits or ACKs. With the CAN Pal, also tie SLNT to 3V3.
 
-  Wiring (ESP32 -> CAN Pal):  3V3->Vcc, GND->GND, GPIO5->TX, GPIO4->RX, 3V3->SLNT
+  Wiring (ESP32 -> CAN Pal):  3V3->Vcc, GND->GND, GPIO21->TX, GPIO22->RX, 3V3->SLNT (REQUIRED)
+  Also fit a 10k resistor from CAN Pal TX to 3V3 so TX stays recessive while the ESP32 boots.
+  Do NOT use a transceiver without a silent pin (e.g. SN65HVD230) on a car.
   CAN Pal -> OBD-II:          CANH->pin 6, CANL->pin 14, GND->pin 5. Termination switch OFF.
   Power the ESP32 from a USB car charger (or a 12V->5V buck on OBD pin 16 + pin 4).
 
@@ -28,8 +30,8 @@
 #include "driver/twai.h"
 
 // ===================== Settings =====================
-#define CAN_TX_PIN   GPIO_NUM_5
-#define CAN_RX_PIN   GPIO_NUM_4
+#define CAN_TX_PIN   GPIO_NUM_21   // GPIO21: no boot-time glitches (GPIO5 pulses at boot)
+#define CAN_RX_PIN   GPIO_NUM_22
 const char *AP_SSID = "CAN-LOGGER";
 const char *AP_PASS = "subaru1234";      // at least 8 characters
 #define MAX_IDS      256
@@ -78,6 +80,11 @@ static int               markCount = 0;
 WebServer server(80);
 
 // ===================== CAN =====================
+static void holdTxRecessive() {
+  pinMode((int)CAN_TX_PIN, OUTPUT);
+  digitalWrite((int)CAN_TX_PIN, HIGH);
+}
+
 static bool startTwai(uint32_t rate) {
   twai_timing_config_t t;
   switch (rate) {
@@ -90,14 +97,18 @@ static bool startTwai(uint32_t rate) {
       TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_LISTEN_ONLY);
   g.rx_queue_len = 256;
   twai_filter_config_t f = TWAI_FILTER_CONFIG_ACCEPT_ALL();
-  if (twai_driver_install(&g, &t, &f) != ESP_OK) return false;
-  if (twai_start() != ESP_OK) { twai_driver_uninstall(); return false; }
+  if (twai_driver_install(&g, &t, &f) != ESP_OK) { holdTxRecessive(); return false; }
+  if (twai_start() != ESP_OK) { twai_driver_uninstall(); holdTxRecessive(); return false; }
   return true;
 }
+
+// Keep the transceiver's TX input HIGH (recessive) whenever the CAN driver isn't running.
+// A LOW here would force the bus dominant and jam every module on it.
 
 static void stopTwai() {
   twai_stop();
   twai_driver_uninstall();
+  holdTxRecessive();
 }
 
 // ---- Diagnostics shown on the phone page while searching ----
@@ -623,6 +634,7 @@ static const char *resetReasonStr() {
 }
 
 void setup() {
+  holdTxRecessive();          // first thing: TX recessive
   Serial.begin(115200);
   delay(300);
   Serial.printf("\n\n=== CAN LOGGER boot. Reset reason: %s ===\n", resetReasonStr());
