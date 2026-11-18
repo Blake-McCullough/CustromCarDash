@@ -71,6 +71,8 @@ Logs are saved in `pi/logs/` (not committed to git) in candump format, gzip-comp
 
 ## Display brightness
 ⚙ → **DISPLAY**: brightness, a separate night brightness, and *Dim when headlights on*.
+- **Above 100% is a boost** (up to 150%, default 130%): the backlight stays at full, and the dash brightens
+  its dim greys, lines, panels and 3D glow. Turn the screen's own brightness buttons to maximum too.
 - Official/DSI touch screens: the dash controls the real backlight.
 - HDMI monitors that support DDC/CI: the dash controls the backlight through `ddcutil` (detected at startup).
 - Most small HDMI screens support neither. The dash then dims the picture in software, and the screen's own

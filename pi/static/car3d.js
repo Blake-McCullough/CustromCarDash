@@ -581,6 +581,18 @@ export class Car3D {
   }
 
   render() {
+    const b = this.boost || 0;
+    if (b > 0) {                                   // brightness boost from Settings
+      const st = this.bloom.strength;
+      this.bloom.strength = st * (1 + b * 0.9);
+      this._renderInner();
+      this.bloom.strength = st;
+      return;
+    }
+    this._renderInner();
+  }
+
+  _renderInner() {
     if (this.hq) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
   }

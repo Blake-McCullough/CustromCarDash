@@ -59,7 +59,9 @@ CustromCarDash/
 ├── AGENTS.md                 ← this file
 ├── README.md                 ← human overview + safety rules
 ├── .gitattributes            ← *.sh and *.py forced to LF (they run on the Pi)
-├── .gitignore                ← ignores pi/settings.json
+├── .gitignore                ← ignores pi/settings.json and pi/logs/
+├── docs/
+│   └── CAN_DECODES.md        ← what each CAN ID/byte on this car means, with evidence
 ├── esp32canlogger/
 │   ├── esp32canlogger.ino    ← standalone Wi-Fi CAN logger (Arduino, esp32 core 3.x)
 │   └── README.md
@@ -67,7 +69,7 @@ CustromCarDash/
 │   └── esp32_canpal_slcan.ino← ESP32 → SLCAN USB bridge
 └── pi/
     ├── dash_server.py        ← backend: CAN → decode → WebSocket; settings API; demo simulator
-    ├── signals.json          ← CAN signal definitions (all currently "verified": false)
+    ├── signals.json          ← CAN signal definitions (decoded from this car; see docs/CAN_DECODES.md)
     ├── setup_pi.sh           ← one-shot Pi installer (CAN overlay, services, kiosk, boot tweaks)
     ├── kiosk.sh              ← launches cage + Chromium full-screen
     ├── setup_can_esp32_bridge.sh ← brings up can0 via slcand (ESP32 bridge path only)
@@ -129,6 +131,8 @@ car CAN (500k) → RS485 CAN HAT (MCP2515) → Linux SocketCAN can0 (listen-only
     every 5 s. New errors are printed to the journal; Settings > System lists each screen (Pi screen vs remote).
   - `GET/POST /api/brightness`: `Brightness` uses `/sys/class/backlight` if writable, else `ddcutil` (DDC/CI,
     probed at startup), else reports `software` and the page dims itself with the `#dim` overlay.
+    Settings `bright` goes to 150% (default 130): above 100 the backlight stays at full and `applyBoost()`
+    lifts the `--dim/--line/--panel` CSS colours and multiplies the bloom strength (`car.boost`, 0–1).
   - `/static/*`: frontend. A middleware adds `Cache-Control: no-cache` so edits show on refresh.
 
 ### 4.2 WebSocket protocol (`/ws`)
@@ -157,6 +161,7 @@ fuel_level, voltage, baro, oil_temp`. The frontend shows them on the **ENGINE** 
 
 ### 4.3 `signals.json`
 Each entry is `name: {id, start_byte, length, endian?, signed?, shift?, mask?, scale?, offset?, unit, verified, _note?}`.
+The human-readable version with evidence is `docs/CAN_DECODES.md`. Update both together.
 
 **Decoded from logs recorded on this car (2026-11-18: parked with markers, then a ~2 min drive up to 75 km/h).**
 The car uses the 2012+ Subaru platform layout, **not** the 0x410/0x511-style IDs we first guessed (those

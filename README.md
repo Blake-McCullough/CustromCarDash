@@ -2,6 +2,7 @@
 
 | Folder | What it is |
 |---|---|
+| `docs/CAN_DECODES.md` | What each CAN message on the car means (gear, speed, steering, lights…), with evidence from the logs. |
 | `pi/` | **The dash.** Raspberry Pi 5 + Waveshare RS485 CAN HAT: 3D wireframe car, gauges, G-meter, graphs, CAN bus viewer. One-command installer, boots straight into the dash. See `pi/README.md`. |
 | `esp32canlogger/` | Standalone ESP32 + CAN Pal logger: phone over Wi-Fi, live CAN view, record + download CSV. |
 | `esp32_canpal_slcan/` | Optional: ESP32 + CAN Pal as a USB CAN adapter for the Pi (instead of the HAT). Use `pi/setup_can_esp32_bridge.sh`. |

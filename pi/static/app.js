@@ -38,7 +38,7 @@ const store = {
 CFG.redline = store.get('redline', CFG.redline);
 CFG.shiftAt = store.get('shiftAt', CFG.shiftAt);
 CFG.mass = store.get('mass', CFG.mass);
-CFG.bright = store.get('bright', 100);
+CFG.bright = store.get('bright', 130);       // >100 = boost: brighter greys/lines/glow on top of full backlight
 CFG.brightNight = store.get('brightNight', 40);
 
 // ---------------------------------------------------------------- state
@@ -298,12 +298,25 @@ function applyBrightness(force) {
   const pct = night ? CFG.brightNight : CFG.bright;
   if (!force && pct === brightNow) return;
   brightNow = pct;
+  const hw = Math.min(pct, 100), boost = Math.max(0, pct - 100) / 50;   // 0..1
   if (brightMethod === 'software') {
-    $('dim').style.opacity = String(Math.min(0.9, 1 - pct / 100));
+    $('dim').style.opacity = String(Math.min(0.9, 1 - hw / 100));
   } else {
     $('dim').style.opacity = '0';
-    fetch('/api/brightness', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pct }) }).catch(() => {});
+    fetch('/api/brightness', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pct: hw }) }).catch(() => {});
   }
+  applyBoost(boost);
+}
+// Boost: the screen can't go past full backlight, but the dash's dark greys, lines, panels and
+// 3D glow can be lifted so everything reads brighter.
+const mix = (a, b, t) => '#' + [0, 2, 4].map(i => Math.round(parseInt(a.slice(1 + i, 3 + i), 16) * (1 - t) + parseInt(b.slice(1 + i, 3 + i), 16) * t).toString(16).padStart(2, '0')).join('');
+function applyBoost(b) {
+  const st = document.documentElement.style;
+  st.setProperty('--dim', mix('#6a707b', '#c2c8d2', b));
+  st.setProperty('--line', mix('#1f232a', '#454d59', b));
+  st.setProperty('--panel', mix('#0c0e11', '#171a20', b));
+  st.setProperty('--panel2', mix('#101317', '#1e2229', b));
+  car.boost = b;
 }
 fetchBrightMethod();
 setTimeout(fetchBrightMethod, 20000);         // DDC detection on the Pi can take a few seconds

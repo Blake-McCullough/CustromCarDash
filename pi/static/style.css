@@ -25,7 +25,7 @@ header { display: flex; align-items: center; gap: calc(var(--u) * 1.6); padding-
 .hstat { color: var(--dim); }
 .hstat em { color: var(--fg); font-style: normal; }
 .chips { display: flex; gap: calc(var(--u) * .6); }
-.chip { padding: calc(var(--u) * .35) calc(var(--u) * .8); border: 1px solid var(--line); border-radius: 3px; color: #2c3038; font-size: calc(var(--u) * 1.35); }
+.chip { padding: calc(var(--u) * .35) calc(var(--u) * .8); border: 1px solid var(--line); border-radius: 3px; color: var(--line); font-size: calc(var(--u) * 1.35); }
 .chip.on { color: var(--bg); background: var(--fg); border-color: var(--fg); }
 .chip.warn.on { background: var(--amber); border-color: var(--amber); }
 .chip.bad.on { background: var(--red); border-color: var(--red); color: #fff; box-shadow: 0 0 10px var(--redglow); }
