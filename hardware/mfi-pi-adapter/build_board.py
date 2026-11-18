@@ -119,6 +119,7 @@ U1 = pcbnew.FOOTPRINT(board)
 U1.SetReference("U1"); U1.SetValue("MFI343S00177 (XDFN-8 2x3)")
 U1.SetFPID(pcbnew.LIB_ID("MFi", "XDFN-8_2x3mm_P0.5mm_HandSolder"))
 U1.SetPosition(P(UX, UY))
+U1.SetAttributes(pcbnew.FP_SMD)   # so position exports include it
 U1.Reference().SetVisible(False); U1.Value().SetVisible(False)
 board.Add(U1)
 
