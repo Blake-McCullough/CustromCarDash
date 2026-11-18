@@ -1,0 +1,6 @@
+Designator,Qty,Value,Package,Manufacturer part,LCSC/JLCPCB part #,Fit?,Notes
+U1,1,MFI343S00177-L,XDFN-8 2x3mm P0.5mm,Microchip MFI343S00177-L,C33770534,Yes,Apple Auth 3.0 chip. Pin-1 dot = white silk dot (top-left). Or use your AliExpress chip
+C1,1,100nF 50V X7R,0805,YAGEO CC0805KRX7R9BB104,C49678,Yes,"Decoupling, required. JLCPCB Basic part"
+"R1,R2",2,10k 1%,0805,UNI-ROYAL 0805W8F1002T5E,C17414,Optional,I2C pull-ups. NOT needed on Pi pins 3/5 (Pi has 1.8k). JLCPCB Basic part
+J1,1,2x3 female header 2.54mm,THT 2x3,generic,,Hand solder,Solder on the BOTTOM side. Plugs onto Pi pins 1-6. Fit J1 OR J2
+J2,1,1x4 male header 2.54mm,THT 1x4,generic,,"Optional, hand solder",Wire header 3V3/GND/SDA/SCL. Fit J1 OR J2

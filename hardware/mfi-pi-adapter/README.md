@@ -11,6 +11,16 @@ A 16 × 11.6 mm two-layer board that carries the Apple Auth 3.0 chip (MFI343S001
 | `MFi-Pi-Adapter.kicad_pcb` | KiCad file, if you want to change anything |
 | `build_board.py` | Script that generated the board (KiCad 7 Python) |
 
+### `assembly/` (parts lists)
+| File | What it's for |
+|---|---|
+| `BOM-full.csv` | Every part, with manufacturer and LCSC numbers, for checking or hand assembly |
+| `JLCPCB-BOM.csv` | JLCPCB assembly BOM: U1 + C1 (R1/R2 left out = not placed) |
+| `JLCPCB-BOM-with-pullups.csv` | The same, plus R1/R2 |
+| `JLCPCB-CPL.csv` | Component placement (mm, origin = bottom-left corner of the board, top side) |
+
+If you order JLCPCB assembly: in the placement preview, the **chip's pin-1 dot must sit on the white silk dot**, top-left of U1. Rotate U1 in the preview if it doesn't. J1/J2 aren't in the assembly files: hand-solder them.
+
 To regenerate it: `python3 build_board.py` (needs KiCad 7 and the `kicad-footprints` library), then open the `.kicad_pcb` in KiCad, run DRC, and plot Gerbers.
 
 ![preview](MFi-Pi-Adapter-preview.png)
