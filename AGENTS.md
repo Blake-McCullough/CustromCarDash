@@ -61,7 +61,11 @@ CustromCarDash/
 ├── .gitattributes            ← *.sh and *.py forced to LF (they run on the Pi)
 ├── .gitignore                ← ignores pi/settings.json and pi/logs/
 ├── docs/
-│   └── CAN_DECODES.md        ← what each CAN ID/byte on this car means, with evidence
+│   ├── CAN_DECODES.md        ← what each CAN ID/byte on this car means, with evidence
+│   └── CARPLAY_LIVI_PLAN.md  ← plan (not built): CarPlay/Waze via LIVI, telemetry bridge, audio via factory AUX
+├── hardware/
+│   └── mfi-pi-adapter/       ← KiCad board for the Apple MFi 3.0 auth chip (MFI343S00177) on Pi I2C1;
+│                                Gerbers for JLCPCB, build/solder guide, generator script (KiCad 7 Python)
 ├── esp32canlogger/
 │   ├── esp32canlogger.ino    ← standalone Wi-Fi CAN logger (Arduino, esp32 core 3.x)
 │   └── README.md
@@ -328,6 +332,7 @@ and `Z`, and refuses `t/T/r/R`. On the Pi: `slcand -o -c -s6 -S 921600 /dev/ttyU
 - Check absolute speed against GPS (tyre size). Calibrate brake pressure. Decode the remaining IDs (0x144, 0x15A, 0x280–282, 0x361, 0x370–378, 0x660) if useful: likely fuel, odometer, doors/indicators.
 - Reversing camera (USB capture of composite video, switched on by the `reverse` signal) and
   dashcam recording were discussed but deliberately left out for now.
-- Bluetooth music output through a USB DAC to the head unit's AUX was discussed but not built.
+- CarPlay/Waze via LIVI, with audio through a USB DAC into the factory head unit's AUX, is planned in
+  `docs/CARPLAY_LIVI_PLAN.md` (replaces the earlier Bluetooth-music idea). Not built yet.
 - OBD-II polling is built (`--obd`) but not yet tested on the real car. If the OBD port turns out to be
   gateway-filtered for broadcast traffic, OBD polling still works, because the gateway answers diagnostic requests.
