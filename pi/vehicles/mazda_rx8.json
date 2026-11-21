@@ -1,0 +1,26 @@
+{
+  "_vehicle": {
+    "short": "RX-8",
+    "name": "Mazda RX-8 (SE3P, 6-speed manual)",
+    "bitrate": 500000,
+    "redline": 9000, "shift_at": 8500,
+    "mass": 1450, "cda": 0.62,
+    "gear_count": 6,
+    "gear_ratios": [137.0, 83.0, 60.0, 43.3, 36.5, 30.8],
+    "model": "basic",
+    "obd_pins": "6 (CAN-H) / 14 (CAN-L)"
+  },
+
+  "_readme": "STARTER profile for a Mazda RX-8 (2003-2012). Decodes come from community RX-8 cluster/ECU-swap projects and have NOT been checked on a real car yet, so every signal is 'verified': false (the dash shows an amber ? next to it). Record a log with markers on the car, check each one, then set 'verified': true. Mazda uses big-endian (Motorola) byte order. gear_ratios are calculated from the factory 6-speed ratios (3.760/2.269/1.645/1.187/1.000/0.843), 4.444 final drive and 225/45R18 tyres; the dash learns the real ones while driving. Same field format as the Impreza profile: id, start_byte, length, endian, signed, shift, mask, scale, offset, unit.",
+
+  "rpm":      { "id": "0x201", "start_byte": 0, "length": 2, "endian": "big", "scale": 0.25974,                 "unit": "rpm",  "verified": false, "_note": "PCM status. raw = rpm x 3.85" },
+  "speed":    { "id": "0x201", "start_byte": 4, "length": 2, "endian": "big", "scale": 0.01, "offset": -100,  "unit": "km/h", "verified": false, "_note": "raw = km/h x 100 + 10000" },
+  "throttle": { "id": "0x201", "start_byte": 6, "length": 1, "scale": 0.5,                                   "unit": "%",    "verified": false, "_note": "accelerator pedal, 0.5 % per bit (0-0xC8)" },
+
+  "wheel_fl": { "id": "0x4B0", "start_byte": 0, "length": 2, "endian": "big", "scale": 0.01, "offset": -100, "unit": "km/h", "verified": false, "_note": "ABS/DSC wheel speeds, same format as speed (check the offset)" },
+  "wheel_fr": { "id": "0x4B0", "start_byte": 2, "length": 2, "endian": "big", "scale": 0.01, "offset": -100, "unit": "km/h", "verified": false },
+  "wheel_rl": { "id": "0x4B0", "start_byte": 4, "length": 2, "endian": "big", "scale": 0.01, "offset": -100, "unit": "km/h", "verified": false },
+  "wheel_rr": { "id": "0x4B0", "start_byte": 6, "length": 2, "endian": "big", "scale": 0.01, "offset": -100, "unit": "km/h", "verified": false },
+
+  "coolant":  { "id": "0x420", "start_byte": 0, "length": 1, "offset": -40,                                  "unit": "°C",   "verified": false, "_note": "sources disagree (coolant vs a gauge-position value). Compare with OBD PID 05 to confirm" }
+}

@@ -10,7 +10,8 @@ touches CAN.
 
 A custom digital dashboard for the owner's **2013 Subaru Impreza** (4th gen "GP", FB20 2.0 L engine,
 Australia, km/h). It reads the car's **CAN bus** from the OBD-II port (pins 6/14, 500 kbit/s) and shows
-live data on a touch screen. The visual style is a dark "neon wireframe" dash with a glowing 3D car.
+live data on a touch screen. Other cars are supported through **vehicle profiles** (`pi/vehicles/*.json`,
+picked in Settings): an unverified Mazda RX-8 starter profile and a generic OBD-II-only one exist so far. The visual style is a dark "neon wireframe" dash with a glowing 3D car.
 
 There are three independent parts:
 
@@ -69,7 +70,11 @@ CustromCarDash/
 │   └── esp32_canpal_slcan.ino← ESP32 → SLCAN USB bridge
 └── pi/
     ├── dash_server.py        ← backend: CAN → decode → WebSocket; settings API; demo simulator
-    ├── signals.json          ← CAN signal definitions (decoded from this car; see docs/CAN_DECODES.md)
+    ├── vehicles/             ← vehicle profiles: CAN decodes + car defaults, one JSON per car (see 4.3)
+    │   ├── subaru_impreza_2013.json ← decoded from this car (see docs/CAN_DECODES.md)
+    │   ├── mazda_rx8.json    ← unverified community starter decodes
+    │   └── generic_obd.json  ← no decodes; for OBD mode on any car
+    ├── vehicle.json          ← created at runtime; which profile is active (git-ignored)
     ├── setup_pi.sh           ← one-shot Pi installer (CAN overlay, services, kiosk, boot tweaks)
     ├── kiosk.sh              ← launches cage + Chromium full-screen
     ├── setup_can_esp32_bridge.sh ← brings up can0 via slcand (ESP32 bridge path only)
@@ -92,7 +97,7 @@ CustromCarDash/
 ```
 car CAN (500k) → RS485 CAN HAT (MCP2515) → Linux SocketCAN can0 (listen-only)
    → dash_server.py (python-can AsyncBufferedReader)
-       → BusState.on_frame(): per-ID stats + decode signals from signals.json
+       → BusState.on_frame(): per-ID stats + decode signals from the active vehicle profile
        → push_task: JSON over WebSocket /ws at 25 Hz
    → Chromium (kiosk) → app.js renders DOM gauges + car3d.js renders the 3D scene
 ```
@@ -100,9 +105,15 @@ car CAN (500k) → RS485 CAN HAT (MCP2515) → Linux SocketCAN can0 (listen-only
 ### 4.1 `dash_server.py`
 - **Dependencies:** `aiohttp`, `python-can` (only imported in live mode; demo needs aiohttp only).
 - **CLI:** `--demo` (simulated drive), `--channel can0`, `--host 127.0.0.1`, `--port 8080`,
-  `--signals path`, `--cursor` (show the mouse pointer; the page hides it by default for touch),
+  `--vehicle id`, `--signals path`, `--cursor` (show the mouse pointer; the page hides it by default for touch),
   `--obd` (opt-in OBD-II polling, see 4.2b).
-- **`load_signals()`** parses `signals.json`, ignoring keys starting with `_`. Builds `by_id` (CAN ID →
+- **Vehicle profiles:** `load_profile(path)` → `(sigs, by_id, info)`. `info` is the file's `_vehicle` block
+  (`short, name, bitrate, redline, shift_at, mass, cda, gear_count, gear_ratios, model, obd_pins`). The active
+  profile comes from `--signals FILE` (locks switching), else `--vehicle ID`, else `vehicle.json`, else
+  `subaru_impreza_2013`. `GET /api/vehicles` returns `{active, profile, list, locked, can_bitrate, signals}`;
+  `POST /api/vehicle {id}` switches live via `BusState.set_profile()` (bumps `meta_ver`; meta messages carry
+  `"vehicle": id`, and pages showing another vehicle reload). `can_bitrate` is read from `ip -details -json`.
+- **`load_profile()`** parses the JSON, ignoring keys starting with `_`. Builds `by_id` (CAN ID →
   list of signals). `mask` strings like `"0x3FFF"` are parsed with `int(x, 0)`.
 - **`decode(sig, data)`** → value:
   1. take bytes `[start_byte, start_byte+length)`
@@ -156,10 +167,10 @@ bitmaps (PIDs 0x00/0x20/0x40), then loops: every fast PID (rpm 0x0C, speed 0x0D,
 slow PID per cycle, round robin. Responses (0x7E8–0x7EF, single frame, byte1 = 0x41) are parsed in
 `BusState.on_obd()`. Names in `obd_names` skip the broadcast decode in `on_frame()`, so OBD wins.
 If no response arrives for 5 s, it re-probes. In demo mode, `fake_ecu()` answers from `state.sim`.
-Extra signal names (not in signals.json): `engine_load, map_kpa, intake_temp, timing_adv, maf, stft, ltft,
+Extra signal names (not in the profiles): `engine_load, map_kpa, intake_temp, timing_adv, maf, stft, ltft,
 fuel_level, voltage, baro, oil_temp`. The frontend shows them on the **ENGINE** tab (`ETILES` in app.js).
 
-### 4.3 `signals.json`
+### 4.3 Vehicle profile `vehicles/subaru_impreza_2013.json` (this car)
 Each entry is `name: {id, start_byte, length, endian?, signed?, shift?, mask?, scale?, offset?, unit, verified, _note?}`.
 The human-readable version with evidence is `docs/CAN_DECODES.md`. Update both together.
 
@@ -196,6 +207,9 @@ Unverified signals get an amber "?".
 - **Settings store:** loads `/api/settings` at startup into `SETTINGS`. `store.get(k, default)` and
   `store.set(k, v)` (debounced POST). Settings live on the backend, not in localStorage, because the
   kiosk Chromium starts with a fresh profile in `/tmp` every boot.
+  **Per-vehicle keys** (`CAR_KEYS`: `redline, shiftAt, mass, gearCount, gearCal, gearMode, carModel, zt_best`)
+  are stashed in `SETTINGS.vehicles[id]` when the active profile changes (`SETTINGS.vehicle` = last seen id),
+  and the profile's `_vehicle` values are the defaults. Settings > VEHICLE lists `pi/vehicles/` and switches.
   Keys: `theme`, `fx`, `autofx`, `particles`, `redline`, `shiftAt`, `cam`, `zt_best`, `mass`,
   `gearMode`, `gearCount`, `gearLearn`, `gearCal`, `bright`, `brightNight`, `brightAuto`, plus the car-display keys.
 - **`CFG`:** `redline` (6500), `shiftAt` (6000), `rpmMax` (= max(7000, redline+500)), `steerRatio` (15:
@@ -273,7 +287,7 @@ Unverified signals get an amber "?".
 - Adds to `/boot/firmware/config.txt` (between `# >>> impreza-dash` markers):
   `dtparam=spi=on`, `dtoverlay=mcp2515-can0,oscillator=${OSC:-12000000},interrupt=25,spimaxfrequency=2000000`.
   The crystal is 12 MHz on current HATs; set `OSC=8000000` if the HAT's crystal says 8.000.
-- `can0.service`: `ip link set can0 up type can bitrate 500000 listen-only on restart-ms 100`.
+- `can0.service`: `ip link set can0 up type can bitrate ${BITRATE:-500000} listen-only on restart-ms 100`.
 - `impreza-dash.service`: runs `dash_server.py --host 0.0.0.0` (reachable from phones/PCs on the LAN, for log downloads) as the user (with `--demo` if installed with `DEMO=1`).
 - Console autologin on tty1. `~/.bash_profile` execs `kiosk.sh` → waits for the backend → runs
   `cage -s -- chromium --kiosk http://127.0.0.1:8080` with a fresh `--user-data-dir=/tmp/dash-chromium`.
@@ -314,7 +328,7 @@ and `Z`, and refuses `t/T/r/R`. On the Pi: `slcand -o -c -s6 -S 921600 /dev/ttyU
 ## 7. Development workflow
 - **On Windows/PC, no hardware:** `pip install aiohttp`, then in `pi/`: `py dash_server.py --demo --cursor`,
   and open `http://localhost:8080`. A refresh picks up frontend edits. Restart the server after editing
-  `signals.json` or `dash_server.py`.
+  a vehicle profile or `dash_server.py`.
 - **Watch out:** the user edits in an IDE. If an AI tool writes a file while it's open in the editor,
   the editor may save its stale buffer over it. That happened several times. After writing files,
   ask the user to reload the files in their editor without saving.

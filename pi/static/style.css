@@ -223,3 +223,16 @@ html.showcursor button, html.showcursor #c3d { cursor: pointer !important; }
   letter-spacing: .14em; margin-top: calc(var(--u) * 1); }
 
 #gear.dimgear { opacity: .4; }
+
+/* vehicle picker (settings) */
+.vlist { display: flex; flex-direction: column; gap: calc(var(--u) * .8); }
+.vrow { display: flex; flex-direction: column; align-items: flex-start; gap: calc(var(--u) * .3); text-align: left;
+  background: #0a0b0e; color: var(--fg); border: 1px solid var(--line); border-radius: 4px;
+  padding: calc(var(--u) * 1) calc(var(--u) * 1.4); font-size: calc(var(--u) * 1.7); }
+.vrow span { color: var(--dim); font-size: calc(var(--u) * 1.4); }
+.vrow.on { border-color: var(--acc); box-shadow: 0 0 calc(var(--u) * 1.2) var(--accglow); }
+.vrow.on b::after { content: '  ● ACTIVE'; color: var(--acc); font-size: .75em; }
+.vrow.busy { opacity: .5; }
+.vrow:disabled:not(.on) { opacity: .45; }
+.vrow .bad { color: var(--red); font-style: normal; }
+.vinfo { font-size: calc(var(--u) * 1.4); margin-top: calc(var(--u) * .8); display: flex; flex-direction: column; gap: calc(var(--u) * .4); }

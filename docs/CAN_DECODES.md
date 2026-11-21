@@ -8,7 +8,7 @@ The car uses the **2012+ Subaru platform layout**. The early guesses (0x410, 0x4
 
 IDs present: `002 0D0 0D1 0D2 0D3 0D4 140 141 144 152 156 15A 280 281 282 360 361 370 372 374 376 378 3D1 660` (24 IDs, ~920 frames/s).
 
-The dash reads these from [`pi/signals.json`](../pi/signals.json), which is the source of truth. Keep this file in step with it.
+The dash reads these from [`pi/vehicles/subaru_impreza_2013.json`](../pi/vehicles/subaru_impreza_2013.json), which is the source of truth. Keep this file in step with it.
 
 | Signal | Decode | Status | Evidence |
 |---|---|---|---|

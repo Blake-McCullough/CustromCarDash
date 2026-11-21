@@ -3,16 +3,16 @@ import { Car3D } from './car3d.js';
 // ---------------------------------------------------------------- config
 const CFG = {
   rpmMax: 7000,      // top of the rpm bar
-  redline: 6500,     // FB20 redline
+  redline: 6500,     // defaults; the active vehicle profile (pi/vehicles/*.json) overrides these
   shiftAt: 6000,     // shift lights flash from here
   steerRatio: 15,    // steering wheel deg -> road wheel deg
   slipPct: 8,        // wheel speed % difference flagged as slip
   // --- calculated gear (fallback): engine rpm per km/h in each gear, measured from a drive on this car.
   //     The car also sends its own gear on 0x141, which is the default source.
-  gearDefaults: [122.0, 66.2, 45.3, 34.1, 27.2, 24.1],   // measured on this car (rpm per km/h)
+  gearDefaults: [130, 75, 52, 40, 32, 27],   // generic; replaced by the profile's gear_ratios (rpm per km/h)
   gearTol: 0.07,     // ratio must be within 7% of a gear to show it
   // --- wheel power estimate (virtual dyno): P = v * (m*a + aero drag + rolling resistance)
-  mass: 1400,        // kg, car + driver (2013 Impreza ~1,300 kg kerb)
+  mass: 1400,        // kg, car + driver
   cda: 0.70,         // drag coefficient x frontal area (m²)
   crr: 0.012,        // rolling resistance coefficient
 };
@@ -35,6 +35,28 @@ const store = {
     }).catch(() => {}), 300);
   },
 };
+// ---------------------------------------------------------------- vehicle profile
+// The backend loads one profile from pi/vehicles/ (CAN decodes + car defaults). Car-specific settings are
+// kept per profile in SETTINGS.vehicles[id], so switching to another car doesn't carry over this one's
+// redline, gear ratios or 0-100 time.
+const CAR_KEYS = ['redline', 'shiftAt', 'mass', 'gearCount', 'gearCal', 'gearMode', 'carModel', 'zt_best'];
+let VEH = { active: null, profile: {}, list: [], locked: false, can_bitrate: null, signals: [] };
+try { VEH = await (await fetch('/api/vehicles', { cache: 'no-store' })).json(); } catch { /* backend not up */ }
+const VP = VEH.profile || {};
+if (VEH.active && SETTINGS.vehicle !== VEH.active) {
+  const per = SETTINGS.vehicles || (SETTINGS.vehicles = {});
+  const had = CAR_KEYS.filter(k => k in SETTINGS);
+  if (had.length) per[SETTINGS.vehicle || 'subaru_impreza_2013'] =      // settings from before profiles = the Impreza
+    Object.fromEntries(had.map(k => [k, SETTINGS[k]]));
+  for (const k of CAR_KEYS) delete SETTINGS[k];
+  Object.assign(SETTINGS, per[VEH.active] || {});
+  store.set('vehicle', VEH.active);
+}
+if (VP.redline) CFG.redline = VP.redline;
+if (VP.shift_at) CFG.shiftAt = VP.shift_at;
+if (VP.mass) CFG.mass = VP.mass;
+if (VP.cda) CFG.cda = VP.cda;
+if (Array.isArray(VP.gear_ratios) && VP.gear_ratios.length) CFG.gearDefaults = VP.gear_ratios.slice();
 CFG.redline = store.get('redline', CFG.redline);
 CFG.shiftAt = store.get('shiftAt', CFG.shiftAt);
 CFG.mass = store.get('mass', CFG.mass);
@@ -51,8 +73,8 @@ let longG = 0;
 // derived values (not on the bus): acceleration from a speed regression, wheel power, calculated gear
 const spdBuf = [];                       // [t ms, speed m/s]
 let accel = 0, wheelKw = 0, pwrPeak = 0;
-let gearCount = store.get('gearCount', 6);
-let gearMode = store.get('gearMode', 'can');            // 'can' (the car's own gear, 0x141) or 'calc' (rpm/speed)
+let gearCount = store.get('gearCount', VP.gear_count || 6);
+let gearMode = store.get('gearMode', VEH.signals && VEH.signals.includes('gear') ? 'can' : 'calc');            // 'can' (the car's own gear, 0x141) or 'calc' (rpm/speed)
 let gearCal = store.get('gearCal', null) || CFG.gearDefaults.slice();
 let learn = { ratio: 0, since: 0, dirty: false, saved: 0 };
 let gPeak = 0;
@@ -152,7 +174,7 @@ function applyFx(save) { car.setQuality(hq); if (save) store.set('fx', hq); rend
 // ---------------------------------------------------------------- car model
 // carModel: 'impreza' (bundled wireframe) | 'custom' (models/model.json + .glb) | 'basic' (built-in shape)
 const CAR = {
-  model: store.get('carModel', 'impreza'),
+  model: store.get('carModel', VP.model || 'basic'),
   detail: store.get('carDetail', 'high'),
   style: store.get('carStyle', 'solid'),
   glow: store.get('carGlow', true),
@@ -232,6 +254,7 @@ function renderSettings() {
   seg('o-brightauto', store.get('brightAuto', false), v => { store.set('brightAuto', v); applyBrightness(true); renderSettings(); });
   $('brightinfo').textContent = brightInfo();
   renderLogList();
+  renderVehicles();
   $('gearcal').textContent = gearCal.slice(0, gearCount).map((r, i) => `${ord[i]} ${Math.round(r)}`).join(' · ') + '  rpm per km/h';
   renderSysinfo();
 }
@@ -259,6 +282,45 @@ $('r-all').onclick = () => {
   fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
     .finally(() => location.reload());
 };
+// ---------------------------------------------------------------- vehicle picker
+function renderVehicles() {
+  const box = $('vlist');
+  if (!box) return;
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  box.innerHTML = (VEH.list || []).map(v => {
+    const on = v.id === VEH.active;
+    const sub = v.error ? `<i class="bad">broken: ${esc(v.error)}</i>`
+      : `${v.signals} signals · ${v.verified} verified · ${v.bitrate / 1000} kbit/s`;
+    return `<button class="vrow${on ? ' on' : ''}" data-id="${esc(v.id)}"${v.error || VEH.locked ? ' disabled' : ''}>` +
+      `<b>${esc(v.name)}</b><span>${sub}</span></button>`;
+  }).join('') || '<span class="dim">No profiles found in pi/vehicles/</span>';
+  box.querySelectorAll('.vrow').forEach(b => { b.onclick = () => switchVehicle(b.dataset.id); });
+  const notes = [];
+  if (VEH.locked) notes.push('Started with --signals: restart without it to switch cars here.');
+  const need = VP.bitrate || 500000;
+  if (VEH.can_bitrate && VEH.can_bitrate !== need)
+    notes.push(`⚠ can0 is running at ${VEH.can_bitrate / 1000} kbit/s but this car uses ${need / 1000}. ` +
+      `On the Pi: sudo BITRATE=${need} ./setup_pi.sh && sudo reboot`);
+  if (VP.obd_pins) notes.push(`OBD pins ${VP.obd_pins}.`);
+  if (VEH.signals && !VEH.signals.length) notes.push('No CAN decodes yet: turn on OBD mode (sudo OBD=1 ./setup_pi.sh) for standard data.');
+  $('vinfo').innerHTML = notes.map(n => `<div>${n}</div>`).join('');
+}
+async function switchVehicle(id) {
+  if (id === VEH.active) return;
+  document.querySelectorAll('#vlist .vrow').forEach(b => b.classList.toggle('busy', b.dataset.id === id));
+  clearTimeout(saveTimer);                  // flush this car's settings first; they're stashed per car on reload
+  try {
+    await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(SETTINGS) });
+    const r = await fetch('/api/vehicle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    if (!r.ok) { const e = await r.json().catch(() => ({})); $('vinfo').textContent = 'Could not switch: ' + (e.error || r.status); renderVehicles(); return; }
+  } catch { $('vinfo').textContent = 'Could not reach the dash backend.'; return; }
+  location.reload();
+}
+if (VP.short) {
+  document.querySelector('.brand').innerHTML = `${VP.short.replace(/[<&]/g, '')} <b>//</b> DASH`;
+  document.title = `${VP.short} Dash`;
+}
+
 function renderSysinfo() {
   if (view !== 'settings') return;
   const n = Object.values(meta).filter(m => !m.verified).length;
@@ -267,6 +329,7 @@ function renderSysinfo() {
     ['OBD-II polling', obdText()],
     ...screensRows(),
     ['CAN frames/s', $('fps').textContent],
+    ['Vehicle', VP.name || VEH.active || '–'],
     ['Signals', `${Object.keys(meta).length} defined · ${n} unverified`],
     ['Car model', car.modelInfo],
     ['Screen', `${window.innerWidth} × ${window.innerHeight}`],
@@ -439,7 +502,10 @@ function derive(now) {
 }
 
 function onMsg(m) {
-  if (m.meta) { meta = m.meta; applyMeta(); return; }
+  if (m.meta) {
+    if (m.vehicle && VEH.active && m.vehicle !== VEH.active) { location.reload(); return; }   // switched elsewhere
+    meta = m.meta; applyMeta(); return;
+  }
   const now = performance.now();
   lastMsg = now;
   V = m.v || {};

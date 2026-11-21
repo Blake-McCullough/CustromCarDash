@@ -118,12 +118,37 @@ re-check the crystal setting. Only then start the engine.
 To go back to listen-only: `sudo ./setup_pi.sh && sudo reboot`.
 Try it without the car: `python3 dash_server.py --demo --obd` (a simulated engine computer answers).
 
+## Vehicle profiles (other cars)
+Each car's CAN decodes live in their own file in `pi/vehicles/`, along with its defaults (name,
+CAN bitrate, redline, weight, gear ratios, 3D model). Pick one in **Settings → VEHICLE**. The dash
+switches straight away, and keeps your shift lights, weight, learned gear ratios and 0–100 best
+separately for each car.
+
+| Profile | What's in it |
+|---|---|
+| `subaru_impreza_2013` | Decoded from logs on Blake's car: 20 signals, 19 verified |
+| `mazda_rx8` | Starter decodes from community RX-8 projects (rpm, speed, throttle, wheel speeds, coolant). **None checked on a real car yet**: every one shows an amber `?` |
+| `generic_obd` | No decodes. Use with OBD mode (`sudo OBD=1 ./setup_pi.sh`) on any 2008+ car for standard data |
+
+**Adding a car:** copy a profile, rename it (letters, digits, `_` and `-` only), edit the `_vehicle`
+block and the signals, and it appears in the list after a page refresh. Signal format: `id`,
+`start_byte`, `length`, `endian` (`big` default, `little`), `signed`, `shift`, `mask`, `scale`,
+`offset`, `unit`, `verified`. Use the standard names (`rpm`, `speed`, `throttle`, `gear`, `clutch`,
+`brake`, `brake_sw`, `steering`, `wheel_fl/fr/rl/rr`, `coolant`, `oil_temp`, `low_beam`, `high_beam`,
+`handbrake`, `lat_g`, `yaw_rate`) so the gauges pick them up.
+
+**Bitrate:** most cars run the OBD-port CAN bus at 500 kbit/s. If a profile says otherwise, the
+settings card warns you; re-install with `sudo BITRATE=250000 ./setup_pi.sh && sudo reboot`.
+
+From the command line: `python3 dash_server.py --vehicle mazda_rx8` (or `--signals file.json`
+to use a one-off file, which locks the picker).
+
 ## First time in the car
 1. Engine **off**, plug in, turn the key to ACC/ON. Check the car's warning lights stay normal.
 2. Start the engine. The header should say **LIVE CAN** with a few thousand FR/S.
 3. Open the **BUS** tab. Rev the engine, press the brake, turn the wheel, and watch which bytes flash.
-4. Fix any wrong decodes in `signals.json`, then set `"verified": true` (the amber `?` disappears).
-   Restart the backend: `sudo systemctl restart impreza-dash`.
+4. Fix any wrong decodes in the car's profile (`pi/vehicles/<car>.json`), then set `"verified": true`
+   (the amber `?` disappears). Restart the backend: `sudo systemctl restart impreza-dash`.
 
 ## Useful commands
 ```bash
@@ -170,7 +195,7 @@ to rebuild the bundled files from an OBJ.
 5. To see it at your screen's exact size: press **F12** → device toolbar icon → enter your screen's
    resolution (e.g. 1024 × 600).
 Edit any file, then press **Ctrl+F5** in the browser to see the change. No need to restart the server,
-except after editing `signals.json` or `dash_server.py`.
+except after editing a vehicle profile or `dash_server.py`.
 
 ## Notes
 - **Mouse pointer:** hidden for the touch screen. With a keyboard attached, tap **Ctrl** on its own to show or hide it

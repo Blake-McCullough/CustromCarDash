@@ -1,4 +1,16 @@
 {
+  "_vehicle": {
+    "short": "IMPREZA",
+    "name": "2013 Subaru Impreza (GP, 6-speed manual)",
+    "bitrate": 500000,
+    "redline": 6500, "shift_at": 6000,
+    "mass": 1400, "cda": 0.70,
+    "gear_count": 6,
+    "gear_ratios": [122.0, 66.2, 45.3, 34.1, 27.2, 24.1],
+    "model": "impreza",
+    "obd_pins": "6 (CAN-H) / 14 (CAN-L)"
+  },
+
   "_readme": "CAN decodes for Blake's 2013 Subaru Impreza (GP, manual, 500 kbit/s, OBD pins 6/14). 'verified': true = confirmed from logs recorded on this car (2026-11-18: parked with markers, then a ~2 min drive up to 75 km/h). 'verified': false = best guess from the same Subaru platform, still to be confirmed (speed/wheel speeds/yaw need a recording while driving). Fields: id, start_byte, length (bytes), endian (big|little), signed, shift (bits), mask, scale, offset, unit.",
 
   "throttle":   { "id": "0x140", "start_byte": 0, "length": 1, "scale": 0.392,                             "unit": "%",     "verified": true,  "_note": "accelerator pedal; rose 0->35% just before rpm climbed" },

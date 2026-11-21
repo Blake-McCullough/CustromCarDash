@@ -3,7 +3,7 @@
 Impreza dash backend.
 
 Reads CAN frames from can0 (Waveshare RS485 CAN HAT, listen-only), decodes the
-signals in signals.json, and streams them to the dash page over a WebSocket.
+signals from the active vehicle profile (vehicles/*.json), and streams them to the dash page over a WebSocket.
 
   python3 dash_server.py            # live from can0
   python3 dash_server.py --demo     # simulated drive, no car needed
@@ -36,8 +36,22 @@ PUSH_INTERVAL = 0.04    # 25 Hz to the browser
 
 
 # ---------------------------------------------------------------- signals
+VEHICLES_DIR = HERE / "vehicles"
+ACTIVE_FILE = HERE / "vehicle.json"       # which profile is selected (git-ignored, written by the settings page)
+DEFAULT_VEHICLE = "subaru_impreza_2013"
+
+
 def load_signals(path):
-    raw = json.loads(Path(path).read_text())
+    sigs, by_id, _ = load_profile(path)
+    return sigs, by_id
+
+
+def load_profile(path):
+    """A vehicle profile: CAN signal decodes plus an optional "_vehicle" block with car defaults
+    (name, bitrate, redline, shift_at, mass, cda, gear_count, gear_ratios, model)."""
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    info = dict(raw.get("_vehicle") or {})
+    info.setdefault("name", Path(path).stem.replace("_", " "))
     sigs = {k: v for k, v in raw.items() if not k.startswith("_")}
     by_id = {}
     for name, s in sigs.items():
@@ -45,7 +59,39 @@ def load_signals(path):
         if "mask" in s:
             s["_mask"] = int(str(s["mask"]), 0)
         by_id.setdefault(s["_id"], []).append((name, s))
-    return sigs, by_id
+    return sigs, by_id, info
+
+
+def list_vehicles():
+    out = []
+    for f in sorted(VEHICLES_DIR.glob("*.json")):
+        try:
+            sigs, _, info = load_profile(f)
+        except Exception as ex:              # a broken file shouldn't hide the others
+            out.append({"id": f.stem, "name": f.stem, "error": str(ex)})
+            continue
+        out.append({"id": f.stem, "name": info["name"], "signals": len(sigs),
+                    "verified": sum(1 for s in sigs.values() if s.get("verified")),
+                    "bitrate": info.get("bitrate", 500000)})
+    return out
+
+
+def active_vehicle():
+    try:
+        vid = json.loads(ACTIVE_FILE.read_text()).get("active", "")
+    except (OSError, ValueError):
+        vid = ""
+    return vid if (VEHICLES_DIR / f"{vid}.json").is_file() else DEFAULT_VEHICLE
+
+
+def can_bitrate(channel):
+    """Bitrate can0 is actually running at (None if unknown / not up)."""
+    try:
+        r = subprocess.run(["ip", "-details", "-json", "link", "show", channel],
+                           capture_output=True, text=True, timeout=2)
+        return json.loads(r.stdout)[0]["linkinfo"]["info_data"]["bittiming"]["bitrate"]
+    except Exception:
+        return None
 
 
 def decode(s, data):
@@ -345,8 +391,9 @@ class Brightness:
 
 # ---------------------------------------------------------------- state
 class BusState:
-    def __init__(self, sigs, by_id):
+    def __init__(self, sigs, by_id, vehicle=None):
         self.sigs, self.by_id = sigs, by_id
+        self.vehicle = vehicle or {}
         self.ids = {}
         self.values = {}
         self.window = 0
@@ -363,6 +410,14 @@ class BusState:
         self.meta_ver = 0
         self.sim = {}                   # demo: current simulated values (for the fake ECU)
         self.logger = BusLogger()
+
+    def set_profile(self, sigs, by_id, vehicle):
+        """Switch vehicle profile live: new decodes from the next frame on."""
+        self.sigs, self.by_id, self.vehicle = sigs, by_id, vehicle
+        for name in list(self.values):          # drop values the old profile decoded
+            if name not in self.obd_names:
+                del self.values[name]
+        self.meta_ver += 1
 
     def obd_supported_raw(self):
         out = set()
@@ -558,6 +613,8 @@ async def demo_source(state, obd=False):
         for i, buf in frames.items():
             state.on_frame(i, buf, now)
         for i, buf in noise.items():
+            if i in state.by_id:                    # the active profile decodes this ID: don't scramble it
+                continue
             if random.random() < 0.2:
                 buf[random.randrange(8)] = random.getrandbits(8)
             state.on_frame(i, buf, now)
@@ -583,7 +640,7 @@ async def push_task(app):
             continue
         if state.meta_ver != meta_sent:
             meta_sent = state.meta_ver
-            m = json.dumps({"meta": state.meta()})
+            m = json.dumps({"meta": state.meta(), "vehicle": state.vehicle.get("id")})
             for ws in list(clients):
                 try:
                     await ws.send_str(m)
@@ -603,7 +660,7 @@ async def ws_handler(request):
     await ws.prepare(request)
     app = request.app
     app["clients"][ws] = False
-    await ws.send_str(json.dumps({"meta": app["state"].meta()}))
+    await ws.send_str(json.dumps({"meta": app["state"].meta(), "vehicle": app["state"].vehicle.get("id")}))
     try:
         async for m in ws:
             if m.type == WSMsgType.TEXT:
@@ -707,6 +764,35 @@ async def brightness_api(request):
     return web.json_response({"method": br.method})
 
 
+async def vehicles_api(request):
+    app = request.app
+    st = app["state"]
+    if request.method == "POST":
+        if app["vehicle_locked"]:
+            return web.json_response({"ok": False, "error": "started with --signals; restart without it to switch"},
+                                     status=409)
+        body = await request.json()
+        vid = str(body.get("id", ""))
+        path = VEHICLES_DIR / f"{vid}.json"
+        if not re.fullmatch(r"[A-Za-z0-9_\-]+", vid) or not path.is_file():
+            return web.json_response({"ok": False, "error": "unknown vehicle"}, status=404)
+        try:
+            sigs, by_id, info = load_profile(path)
+        except Exception as ex:
+            return web.json_response({"ok": False, "error": f"{vid}.json: {ex}"}, status=400)
+        info["id"] = vid
+        st.set_profile(sigs, by_id, info)
+        tmp = ACTIVE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"active": vid}))
+        os.replace(tmp, ACTIVE_FILE)
+        print(f"Vehicle profile: {info['name']} ({len(sigs)} signals)", flush=True)
+    rate = None if st.source == "demo" else await asyncio.to_thread(can_bitrate, app["channel"])
+    return web.json_response({"active": st.vehicle.get("id"), "profile": st.vehicle, "list": list_vehicles(),
+                              "locked": app["vehicle_locked"], "can_bitrate": rate,
+                              "signals": sorted(st.sigs)},
+                             headers={"Cache-Control": "no-cache"})
+
+
 async def get_settings(request):
     try:
         data = json.loads(SETTINGS_FILE.read_text())
@@ -753,15 +839,27 @@ def main():
     ap.add_argument("--channel", default="can0")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8080)
-    ap.add_argument("--signals", default=str(HERE / "signals.json"))
+    ap.add_argument("--vehicle", help="vehicle profile in vehicles/ (e.g. mazda_rx8); default: the one picked "
+                                      "in Settings, else " + DEFAULT_VEHICLE)
+    ap.add_argument("--signals", help="use this signal file instead of a vehicle profile (disables switching)")
     ap.add_argument("--cursor", action="store_true", help="show the mouse cursor (hidden by default for touch screens)")
     ap.add_argument("--obd", action="store_true",
                     help="poll standard OBD-II PIDs (TRANSMITS requests; can0 must NOT be listen-only)")
     args = ap.parse_args()
 
-    sigs, by_id = load_signals(args.signals)
+    if args.signals:
+        path, vid = Path(args.signals), "custom"
+    else:
+        vid = args.vehicle or active_vehicle()
+        path = VEHICLES_DIR / f"{vid}.json"
+        if not path.is_file():
+            ap.error(f"no vehicle profile {path} (have: {', '.join(v['id'] for v in list_vehicles())})")
+    sigs, by_id, info = load_profile(path)
+    info["id"] = vid
     app = web.Application(middlewares=[no_cache])
-    app["state"] = BusState(sigs, by_id)
+    app["state"] = BusState(sigs, by_id, info)
+    app["vehicle_locked"] = bool(args.signals)
+    app["channel"] = args.channel
     app["bright"] = Brightness()
     app["screens"] = {}
     app["clients"] = {}
@@ -769,6 +867,8 @@ def main():
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/api/settings", get_settings)
+    app.router.add_get("/api/vehicles", vehicles_api)
+    app.router.add_post("/api/vehicle", vehicles_api)
     app.router.add_post("/api/settings", post_settings)
     app.router.add_post("/api/log/{action:start|stop|mark|delete}", log_api)
     app.router.add_get("/api/logs", log_list)
@@ -795,7 +895,8 @@ def main():
     app.on_startup.append(start_bg)
     app.on_cleanup.append(stop_bg)
     mode = ("demo" if args.demo else args.channel) + (", OBD polling" if args.obd else "")
-    print(f"Dash on http://{args.host}:{args.port}  ({mode})", flush=True)
+    print(f"Dash on http://{args.host}:{args.port}  ({mode}) · vehicle: {info['name']} ({len(sigs)} signals)",
+          flush=True)
     web.run_app(app, host=args.host, port=args.port, print=None)
 
 

@@ -5,6 +5,7 @@
 #   sudo OSC=8000000 ./setup_pi.sh     # if your HAT's crystal says 8.000 (default 12 MHz)
 #   sudo DEMO=1 ./setup_pi.sh          # run the dash on simulated data (bench testing)
 #   sudo OBD=1 ./setup_pi.sh           # ALSO poll standard OBD-II data (the HAT transmits requests)
+#   sudo BITRATE=250000 ./setup_pi.sh  # car's CAN bus isn't 500 kbit/s (see the vehicle profile)
 # Safe to re-run.
 set -euo pipefail
 
@@ -15,10 +16,12 @@ PI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OSC="${OSC:-12000000}"
 DEMO="${DEMO:-0}"
 OBD="${OBD:-0}"
+BITRATE="${BITRATE:-500000}"
+[[ "$BITRATE" =~ ^(125000|250000|500000|1000000)$ ]] || { echo "BITRATE must be 125000, 250000, 500000 or 1000000"; exit 1; }
 BOOT=/boot/firmware
 [[ -d $BOOT ]] || BOOT=/boot
 
-echo "==> Installing for user '$USER_NAME', dash in $PI_DIR (CAN crystal ${OSC} Hz, demo=$DEMO, obd=$OBD)"
+echo "==> Installing for user '$USER_NAME', dash in $PI_DIR (CAN crystal ${OSC} Hz, ${BITRATE} bit/s, demo=$DEMO, obd=$OBD)"
 
 # ------------------------------------------------------------------ packages
 apt-get update
@@ -45,16 +48,16 @@ for opt in quiet loglevel=3 logo.nologo vt.global_cursor_default=0 consoleblank=
   grep -qw -- "$opt" "$CMD" || sed -i "1 s/\$/ $opt/" "$CMD"
 done
 
-# ------------------------------------------------------------------ can0 at 500 kbit/s
+# ------------------------------------------------------------------ can0 (500 kbit/s unless BITRATE=...)
 # Default: LISTEN-ONLY (the HAT can never transmit or ACK).
 # OBD=1: normal mode so the dash can send OBD-II requests. No auto-restart from bus-off, so a
 #        wrong crystal/bitrate makes the controller go silent instead of repeatedly disturbing the bus.
 if [[ "$OBD" == "1" ]]; then
-  CAN_UP="/sbin/ip link set can0 up type can bitrate 500000"
-  CAN_DESC="can0 up (500 kbit/s, normal mode for OBD-II polling)"
+  CAN_UP="/sbin/ip link set can0 up type can bitrate $BITRATE"
+  CAN_DESC="can0 up ($((BITRATE / 1000)) kbit/s, normal mode for OBD-II polling)"
 else
-  CAN_UP="/sbin/ip link set can0 up type can bitrate 500000 listen-only on restart-ms 100"
-  CAN_DESC="can0 up (500 kbit/s, listen-only)"
+  CAN_UP="/sbin/ip link set can0 up type can bitrate $BITRATE listen-only on restart-ms 100"
+  CAN_DESC="can0 up ($((BITRATE / 1000)) kbit/s, listen-only)"
 fi
 cat > /etc/systemd/system/can0.service <<EOF
 [Unit]

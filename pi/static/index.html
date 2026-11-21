@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>Impreza Dash</title>
+<title>Car Dash</title>
 <link rel="stylesheet" href="/static/style.css">
 <script type="importmap">
 { "imports": { "three": "/static/vendor/three.module.js", "three/addons/": "/static/vendor/addons/" } }
@@ -132,6 +132,11 @@
     </div>
     <div class="scol">
       <div class="card sblock">
+        <div class="label">VEHICLE <small class="dim">· CAN decodes + car defaults (pi/vehicles/)</small></div>
+        <div class="vlist" id="vlist"></div>
+        <div class="vinfo dim" id="vinfo"></div>
+      </div>
+      <div class="card sblock">
         <div class="label">GRAPHICS</div>
         <div class="opt"><span>Glow effects</span><div class="seg2" id="o-fx"><button data-v="1">HIGH</button><button data-v="0">LOW</button></div></div>
         <div class="opt"><span>Auto-lower if slow</span><div class="seg2" id="o-autofx"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
@@ -140,8 +145,8 @@
       </div>
       <div class="card sblock">
         <div class="label">SHIFT LIGHTS</div>
-        <div class="opt"><span>Flash from</span><div class="step" data-k="shiftAt" data-step="100" data-min="2000" data-max="7500"><button>&minus;</button><b></b><button>+</button></div></div>
-        <div class="opt"><span>Redline</span><div class="step" data-k="redline" data-step="100" data-min="3000" data-max="8000"><button>&minus;</button><b></b><button>+</button></div></div>
+        <div class="opt"><span>Flash from</span><div class="step" data-k="shiftAt" data-step="100" data-min="2000" data-max="9500"><button>&minus;</button><b></b><button>+</button></div></div>
+        <div class="opt"><span>Redline</span><div class="step" data-k="redline" data-step="100" data-min="3000" data-max="10000"><button>&minus;</button><b></b><button>+</button></div></div>
       </div>
       <div class="card sblock">
         <div class="label">GEAR &amp; POWER</div>

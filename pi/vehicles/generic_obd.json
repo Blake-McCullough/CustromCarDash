@@ -1,0 +1,14 @@
+{
+  "_vehicle": {
+    "short": "OBD",
+    "name": "Any car: standard OBD-II only",
+    "bitrate": 500000,
+    "redline": 6500, "shift_at": 6000,
+    "mass": 1400, "cda": 0.70,
+    "gear_count": 5,
+    "model": "basic",
+    "obd_pins": "6 (CAN-H) / 14 (CAN-L)"
+  },
+
+  "_readme": "No manufacturer-specific decodes. Use this on a car nobody has decoded yet: turn on OBD mode (sudo OBD=1 ./setup_pi.sh) and the dash asks the engine computer for standard OBD-II data (rpm, speed, throttle, coolant, etc.), which every 2008+ car supports. Gear is calculated from rpm and speed, and learns your ratios while you drive. To start decoding the car's own messages, copy this file, record logs with markers, and add signals in the same format as the other profiles."
+}
