@@ -324,7 +324,8 @@ setInterval(() => applyBrightness(false), 1000);
 
 // ---------------------------------------------------------------- CAN bus logging
 const MARKS = ['MARK', 'IDLE', 'REV', 'BRAKE', 'CLUTCH', 'HANDBRAKE', 'STEER L', 'STEER R', 'CENTRE',
-  'N', '1', '2', '3', '4', '5', '6', 'R', 'LOW BEAM', 'HIGH BEAM', 'INDIC L', 'INDIC R', 'DOOR', 'WIPERS'];
+  'N', '1', '2', '3', '4', '5', '6', 'R', 'LOW BEAM', 'HIGH BEAM', 'INDIC L', 'INDIC R', 'DOOR', 'WIPERS',
+  'A/C', 'FAN', 'TEMP', 'RECIRC', 'DEMIST'];
 let logOn = false, logs = [];
 for (const label of MARKS) {
   const b = document.createElement('button');
