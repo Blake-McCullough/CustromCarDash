@@ -375,10 +375,10 @@ function applyBrightness(force) {
 const mix = (a, b, t) => '#' + [0, 2, 4].map(i => Math.round(parseInt(a.slice(1 + i, 3 + i), 16) * (1 - t) + parseInt(b.slice(1 + i, 3 + i), 16) * t).toString(16).padStart(2, '0')).join('');
 function applyBoost(b) {
   const st = document.documentElement.style;
-  st.setProperty('--dim', mix('#6a707b', '#c2c8d2', b));
-  st.setProperty('--line', mix('#1f232a', '#454d59', b));
-  st.setProperty('--panel', mix('#0c0e11', '#171a20', b));
-  st.setProperty('--panel2', mix('#101317', '#1e2229', b));
+  st.setProperty('--dim', mix('#6f7887', '#c4cad5', b));          // base values = :root in style.css
+  st.setProperty('--line', mix('#1e2430', '#465063', b));
+  st.setProperty('--panel', mix('#0b0e13', '#171b23', b));
+  st.setProperty('--panel2', mix('#121620', '#1f2530', b));
   car.boost = b;
 }
 fetchBrightMethod();
@@ -666,17 +666,32 @@ function drawG(lat, lng) {
   if (gc.width !== w || gc.height !== h) { gc.width = w; gc.height = h; }
   const cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 - 6 * dpr, max = 1.2;
   gx.clearRect(0, 0, w, h);
-  gx.strokeStyle = '#1f232a'; gx.lineWidth = dpr;
-  for (const r of [0.4, 0.8, 1.2]) { gx.beginPath(); gx.arc(cx, cy, R * r / max, 0, Math.PI * 2); gx.stroke(); }
+  const acc = THEMES[theme].acc;
+  const bg = gx.createRadialGradient(cx, cy, 0, cx, cy, R);          // soft glow disc behind the rings
+  bg.addColorStop(0, hexA(acc, 0.10)); bg.addColorStop(0.75, hexA(acc, 0.03)); bg.addColorStop(1, 'rgba(0,0,0,0)');
+  gx.fillStyle = bg; gx.beginPath(); gx.arc(cx, cy, R, 0, Math.PI * 2); gx.fill();
+  gx.lineWidth = dpr;
+  [0.4, 0.8, 1.2].forEach((r, i) => {
+    gx.strokeStyle = i === 2 ? hexA(acc, 0.35) : '#1c222c';
+    gx.setLineDash(i === 2 ? [] : [3 * dpr, 5 * dpr]);
+    gx.beginPath(); gx.arc(cx, cy, R * r / max, 0, Math.PI * 2); gx.stroke();
+  });
+  gx.setLineDash([]);
+  gx.strokeStyle = '#1c222c';
   gx.beginPath(); gx.moveTo(cx - R, cy); gx.lineTo(cx + R, cy); gx.moveTo(cx, cy - R); gx.lineTo(cx, cy + R); gx.stroke();
-  gx.fillStyle = '#4a4f58'; gx.font = `${10 * dpr}px ui-monospace, monospace`;
+  gx.strokeStyle = hexA(acc, 0.5);                                      // ticks round the outer ring
+  for (let a = 0; a < 360; a += 15) {
+    const t = a * Math.PI / 180, r0 = R * (a % 90 ? 0.965 : 0.93);
+    gx.beginPath(); gx.moveTo(cx + Math.cos(t) * r0, cy + Math.sin(t) * r0); gx.lineTo(cx + Math.cos(t) * R, cy + Math.sin(t) * R); gx.stroke();
+  }
+  gx.fillStyle = '#4a5260'; gx.font = `600 ${10 * dpr}px "JetBrains Mono", ui-monospace, monospace`;
   gx.fillText('0.4', cx + 3 * dpr, cy - R * 0.4 / max - 2 * dpr); gx.fillText('0.8', cx + 3 * dpr, cy - R * 0.8 / max - 2 * dpr);
   // dot: right = turning right (lat positive to the left -> dot left), up = accelerating
   const px = cx - clamp(lat, -max, max) / max * R, py = cy - clamp(lng, -max, max) / max * R;
   const now = performance.now();
   gTrail.push([px, py, now]);
   while (gTrail.length && now - gTrail[0][2] > 1500) gTrail.shift();
-  const acc = THEMES[theme].acc;
+  gx.lineCap = 'round'; gx.lineJoin = 'round';
   gx.lineWidth = 2 * dpr; gx.strokeStyle = hexA(acc, 0.35); gx.beginPath();
   gTrail.forEach(([x, y], i) => i ? gx.lineTo(x, y) : gx.moveTo(x, y)); gx.stroke();
   gx.shadowColor = hexA(acc, 0.9); gx.shadowBlur = 14 * dpr;
@@ -700,24 +715,42 @@ function drawGraphs() {
   if (grc.width !== w || grc.height !== h) { grc.width = w; grc.height = h; }
   grx.clearRect(0, 0, w, h);
   const now = performance.now(), span = 30000, lh = h / LANES.length;
-  grx.font = `${11 * dpr}px ui-monospace, monospace`;
+  const UI = '"Chakra Petch", sans-serif', NUM = '"JetBrains Mono", ui-monospace, monospace';
+  LANES[0].color = THEMES[theme].acc;                                   // RPM follows the theme colour
+  grx.lineCap = 'round'; grx.lineJoin = 'round';
   LANES.forEach((L, li) => {
-    const y0 = li * lh + 6 * dpr, y1 = (li + 1) * lh - 6 * dpr;
-    grx.strokeStyle = '#1a1d22'; grx.lineWidth = dpr; grx.strokeRect(0.5, y0, w - 1, y1 - y0);
-    grx.fillStyle = '#6a707b'; grx.fillText(L.name, 8 * dpr, y0 + 14 * dpr);
+    const y0 = li * lh + 8 * dpr, y1 = (li + 1) * lh - 8 * dpr;
+    grx.fillStyle = 'rgba(255,255,255,0.018)'; grx.beginPath(); grx.roundRect(0, y0, w, y1 - y0, 8 * dpr); grx.fill();
+    grx.strokeStyle = '#161b23'; grx.lineWidth = dpr;                   // quarter gridlines
+    grx.setLineDash([2 * dpr, 6 * dpr]);
+    for (const f of [0.25, 0.5, 0.75]) { const y = y1 - f * (y1 - y0); grx.beginPath(); grx.moveTo(0, y); grx.lineTo(w, y); grx.stroke(); }
+    grx.setLineDash([]);
+    grx.fillStyle = '#6f7887'; grx.font = `600 ${11 * dpr}px ${UI}`; grx.fillText(L.name, 12 * dpr, y0 + 18 * dpr);
     const Y = v => y1 - (clamp(v, L.min, L.max) - L.min) / (L.max - L.min) * (y1 - y0);
-    if (L.min < 0) { grx.strokeStyle = '#22262c'; grx.beginPath(); grx.moveTo(0, Y(0)); grx.lineTo(w, Y(0)); grx.stroke(); }
-    const plot = (idx, color) => {
-      grx.strokeStyle = color; grx.lineWidth = 2 * dpr; grx.beginPath();
-      hist.forEach((s, i) => { const x = w - (now - s[0]) / span * w; i ? grx.lineTo(x, Y(s[idx])) : grx.moveTo(x, Y(s[idx])); });
-      grx.stroke();
+    if (L.min < 0) { grx.strokeStyle = '#2a313c'; grx.beginPath(); grx.moveTo(0, Y(0)); grx.lineTo(w, Y(0)); grx.stroke(); }
+    const plot = (idx, color, fill) => {
+      if (hist.length < 2) return;
+      const X = s => w - (now - s[0]) / span * w;
+      grx.beginPath();
+      hist.forEach((s, i) => i ? grx.lineTo(X(s), Y(s[idx])) : grx.moveTo(X(s), Y(s[idx])));
+      if (fill) {                                                       // gradient area under the line
+        const base = L.min < 0 ? Y(0) : y1;
+        const g = grx.createLinearGradient(0, y0, 0, y1);
+        g.addColorStop(0, hexA(color, 0.28)); g.addColorStop(1, hexA(color, 0));
+        grx.save(); grx.lineTo(X(hist[hist.length - 1]), base); grx.lineTo(X(hist[0]), base); grx.closePath();
+        grx.fillStyle = g; grx.fill(); grx.restore();
+        grx.beginPath(); hist.forEach((s, i) => i ? grx.lineTo(X(s), Y(s[idx])) : grx.moveTo(X(s), Y(s[idx])));
+      }
+      grx.strokeStyle = color; grx.lineWidth = 2 * dpr; grx.shadowColor = hexA(color, 0.7); grx.shadowBlur = 8 * dpr;
+      grx.stroke(); grx.shadowBlur = 0;
     };
-    plot(L.idx, L.color);
-    if (L.idx2) plot(L.idx2, L.color2);
+    plot(L.idx, L.color, true);
+    if (L.idx2) plot(L.idx2, L.color2, false);
     const last = hist.length ? hist[hist.length - 1][L.idx] : 0;
-    grx.fillStyle = L.color; grx.textAlign = 'right'; grx.font = `bold ${16 * dpr}px ui-monospace, monospace`;
-    grx.fillText(Math.round(last).toLocaleString(), w - 10 * dpr, y0 + 20 * dpr);
-    grx.textAlign = 'left'; grx.font = `${11 * dpr}px ui-monospace, monospace`;
+    grx.fillStyle = L.color; grx.textAlign = 'right'; grx.font = `800 ${18 * dpr}px ${NUM}`;
+    grx.shadowColor = hexA(L.color, 0.6); grx.shadowBlur = 10 * dpr;
+    grx.fillText(Math.round(last).toLocaleString(), w - 12 * dpr, y0 + 24 * dpr);
+    grx.shadowBlur = 0; grx.textAlign = 'left';
   });
 }
 

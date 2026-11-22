@@ -88,6 +88,7 @@ CustromCarDash/
         ├── car3d.js          ← three.js scene: wireframe car, camera modes, bloom, model loading
         ├── models/           ← optional real car model (.glb) + model.json; see README there
         └── vendor/           ← three.js r170 (three.module.js) + addons (bloom, GLTFLoader)
+                                 + fonts/ (Chakra Petch for text, JetBrains Mono for numbers; OFL, offline)
 ```
 
 ---
@@ -248,6 +249,11 @@ Unverified signals get an amber "?".
     TRY AGAIN) if `car.render()` takes > 120 ms for 15 frames or the page stays < 8 fps for 8 s. This came from a
     real bug: on the Pi 4 the page sat on "WAITING FOR CAN" while phones showed live data.
     `SOFTWARE_GPU` flags SwiftShader/llvmpipe.
+- **Look (style.css):** rounded gradient panels with an accent hairline on top, pill buttons/segmented
+  controls, slanted RPM segments, fixed-width digits (JetBrains Mono) so numbers don't jitter. Colours come
+  from CSS variables, so themes recolour everything. Deliberately **no `backdrop-filter` or full-screen
+  overlays** over the 3D canvas (they make the Pi re-composite every frame). The G-meter and graphs are
+  canvas-drawn in app.js (`drawG`, `drawGraphs`) and follow the theme accent.
 - **Themes:** `THEMES = {red, wrb, ice, matrix, gold, neon, pink, mono}`, each `{name, acc, tint}`.
   `applyTheme()` sets the CSS variables `--acc`, `--accglow` and `--tint` and calls `car.setTheme()`.
   Warning colours (`--red`: brake bar, slip, check engine, redline segments) deliberately stay red.
