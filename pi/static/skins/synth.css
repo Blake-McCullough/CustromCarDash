@@ -1,0 +1,88 @@
+/* SYNTHWAVE skin: chunky double-framed neon panels, candy-gradient italic numbers, slanted tabs.
+   Everything is scoped to body[data-skin="synth"]. --acc (the colour theme) is the frame colour;
+   magenta is this skin's fixed second colour. ICE or NEON themes suit it best.
+   Note: don't override --dim/--line/--panel here; app.js boosts those for the brightness setting. */
+body[data-skin="synth"] {
+  --mag: #ff2fd6;
+  --sy-panel: rgba(34, 10, 64, .9);
+  --sy-panel2: rgba(12, 4, 28, .94);
+  --track: #1d0a33;
+  background:
+    radial-gradient(ellipse 90% 40% at 50% 100%, rgba(255, 47, 214, .16), transparent 70%),
+    radial-gradient(ellipse 70% 60% at 50% 40%, rgba(80, 20, 140, .25), transparent 75%),
+    linear-gradient(#07020f, #0d0320);
+}
+body[data-skin="synth"] .card {
+  background: linear-gradient(160deg, var(--sy-panel), var(--sy-panel2));
+  border: 2px solid color-mix(in srgb, var(--acc) 85%, #fff);
+  border-radius: 4px;
+  outline: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); outline-offset: -7px;
+  box-shadow: 0 0 calc(var(--u) * 1.6) color-mix(in srgb, var(--acc) 45%, transparent),
+    inset 0 0 calc(var(--u) * 2.6) color-mix(in srgb, var(--acc) 22%, transparent);
+}
+/* the "///" tag in each panel's top-right corner */
+body[data-skin="synth"] .card::before {
+  left: auto; right: calc(var(--u) * 1.6); top: calc(var(--u) * 1.1); width: calc(var(--u) * 4.4); height: calc(var(--u) * .8);
+  opacity: 1; background: repeating-linear-gradient(-60deg, var(--mag) 0 3px, transparent 3px 7px);
+}
+body[data-skin="synth"] .stage { background: #07020f; }
+body[data-skin="synth"] .stage::before { z-index: 3; }
+body[data-skin="synth"] .label { color: #ff9cf0; text-shadow: 0 0 8px rgba(255, 47, 214, .5); }
+
+/* candy-gradient italic numbers */
+body[data-skin="synth"] .speed,
+body[data-skin="synth"] #gear,
+body[data-skin="synth"] .big,
+body[data-skin="synth"] .tgrid b,
+body[data-skin="synth"] .etile b {
+  background: linear-gradient(180deg, #ffffff 0%, #f3e6ff 38%, #b48cff 50%, color-mix(in srgb, var(--acc) 80%, #fff) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 1px rgba(20, 0, 40, .55);
+  filter: drop-shadow(0 0 calc(var(--u) * .9) color-mix(in srgb, var(--acc) 60%, transparent));
+  transform: skewX(-8deg); display: inline-block; text-shadow: none;
+}
+body[data-skin="synth"] .tgrid b { display: block; width: fit-content; }
+body[data-skin="synth"] .etile b small { -webkit-text-stroke: 0; }
+body[data-skin="synth"] #gear.rev { background: linear-gradient(#fff, var(--red)); -webkit-background-clip: text; background-clip: text; }
+body[data-skin="synth"] .gearbox {
+  border-radius: 4px; border-width: 2px; outline: 1px solid color-mix(in srgb, var(--mag) 60%, transparent); outline-offset: 3px;
+  background: linear-gradient(180deg, rgba(255, 47, 214, .12), color-mix(in srgb, var(--acc) 16%, transparent));
+}
+body[data-skin="synth"] .unit, body[data-skin="synth"] .minis small, body[data-skin="synth"] .tgrid small { color: #c29ae6; }
+
+/* RPM: accent → magenta → white as it climbs */
+body[data-skin="synth"] .segs i { background: var(--track); }
+body[data-skin="synth"] .segs i:nth-child(5n) { background: #2a0f48; }
+body[data-skin="synth"] .segs i.on { background: linear-gradient(180deg, #fff, var(--acc)); box-shadow: 0 0 8px var(--accglow); }
+body[data-skin="synth"] .segs i.on.w { background: linear-gradient(180deg, #ffd0f6, var(--mag)); box-shadow: 0 0 10px rgba(255, 47, 214, .6); }
+
+/* bars: segmented neon fill */
+body[data-skin="synth"] .bar { border-radius: 2px; transform: skewX(-14deg); }
+body[data-skin="synth"] .bar > i { border-radius: 0; background: linear-gradient(90deg, var(--acc), var(--mag));
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 7px, transparent 7px 9px); mask: repeating-linear-gradient(90deg, #000 0 7px, transparent 7px 9px); }
+body[data-skin="synth"] .bar.red > i { background: linear-gradient(90deg, #ff7186, var(--red)); }
+
+/* header + nav: slanted tabs */
+body[data-skin="synth"] header::after { height: 2px; background: linear-gradient(90deg, transparent, var(--mag) 15%, var(--acc) 50%, var(--mag) 85%, transparent); }
+body[data-skin="synth"] .brand { font-style: italic; }
+body[data-skin="synth"] .brand b { color: var(--mag); text-shadow: 0 0 12px rgba(255, 47, 214, .7); }
+body[data-skin="synth"] .chip { border-radius: 2px; transform: skewX(-12deg); }
+body[data-skin="synth"] nav > button:not(.cog) {
+  border-radius: 3px; transform: skewX(-14deg); border: 2px solid color-mix(in srgb, var(--acc) 45%, transparent);
+  background: linear-gradient(180deg, rgba(40, 12, 72, .95), rgba(14, 4, 30, .95)); color: #c29ae6;
+}
+body[data-skin="synth"] nav > button.on:not(.cog) {
+  color: #fff; border-color: color-mix(in srgb, var(--acc) 90%, #fff);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 70%, #fff) -40%, color-mix(in srgb, var(--mag) 55%, #1a0530));
+  box-shadow: 0 0 calc(var(--u) * 1.8) color-mix(in srgb, var(--acc) 50%, transparent);
+}
+body[data-skin="synth"] nav button.cog { border-radius: 4px; border: 2px solid color-mix(in srgb, var(--acc) 45%, transparent); background: rgba(20, 6, 40, .95); }
+body[data-skin="synth"] .cams { border-radius: 3px; background: rgba(12, 3, 26, .92); border: 1px solid color-mix(in srgb, var(--acc) 50%, transparent); }
+body[data-skin="synth"] .cams button { border-radius: 2px; }
+body[data-skin="synth"] .cams button.on { background: linear-gradient(90deg, var(--acc), var(--mag)); }
+body[data-skin="synth"] .wl { border-radius: 2px; background: rgba(16, 4, 34, .9); border-color: color-mix(in srgb, var(--acc) 55%, transparent); }
+body[data-skin="synth"] .seg2, body[data-skin="synth"] .seg2 button { border-radius: 3px; }
+body[data-skin="synth"] .seg2 button.on { background: linear-gradient(90deg, var(--acc), var(--mag)); }
+body[data-skin="synth"] .etile { border-radius: 3px; background: linear-gradient(160deg, rgba(50, 16, 90, .5), rgba(10, 3, 24, .6));
+  border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
+body[data-skin="synth"] #off { background: radial-gradient(ellipse at center, rgba(60, 10, 90, .9), rgba(7, 2, 15, .98) 70%); }

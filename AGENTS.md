@@ -84,7 +84,8 @@ CustromCarDash/
     ├── README.md
     └── static/               ← frontend, served by dash_server.py at /static
         ├── index.html        ← layout; import map points "three" at vendor/
-        ├── style.css
+        ├── style.css         ← base look (the NEON WIRE skin)
+        ├── skins/            ← synth.css, crt.css: extra skins, scoped to body[data-skin="…"]
         ├── app.js            ← UI logic, state, gauges, graphs, bus table, settings page
         ├── car3d.js          ← three.js scene: wireframe car, camera modes, bloom, model loading
         ├── models/           ← optional real car model (.glb) + model.json; see README there
@@ -217,7 +218,7 @@ Unverified signals get an amber "?".
 - **`CFG`:** `redline` (6500), `shiftAt` (6000), `rpmMax` (= max(7000, redline+500)), `steerRatio` (15:
   steering wheel deg → road wheel deg for the 3D front wheels), `slipPct` (8: wheel-speed deviation
   flagged as slip).
-- **URL params:** `?keepfx` disables the automatic quality drop (for testing). `?cursor` shows the mouse.
+- **URL params:** `?keepfx` disables the automatic quality drop and the 3D pause (for testing). `?cursor` shows the mouse.
 - **Mouse pointer:** hidden by default (touch screen). Tapping **Ctrl** on its own toggles it, and so does
   Settings > Graphics > Mouse pointer. Saved as setting `cursor`.
 - **Views** (bottom nav): `drive`, `graphs`, `engine` (OBD-II tiles), `bus`, `settings` (⚙ button). Only the active view renders.
@@ -255,6 +256,11 @@ Unverified signals get an amber "?".
   from CSS variables, so themes recolour everything. Deliberately **no `backdrop-filter` or full-screen
   overlays** over the 3D canvas (they make the Pi re-composite every frame). The G-meter and graphs are
   canvas-drawn in app.js (`drawG`, `drawGraphs`) and follow the theme accent.
+- **Skins** (Settings > SKIN, setting `skin`): `wire` (default), `synth`, `crt`. `applySkin()` sets
+  `body[data-skin]` (CSS in `static/skins/<skin>.css`; don't redefine `--dim/--line/--panel` there except CRT,
+  because `applyBoost()` sets those), calls `car.setSkin()`, and on a user change picks the matching car
+  finish (`SKIN_STYLE`: solid / gloss / x-ray, still changeable under CAR > Style) and resets the camera to AUTO.
+  The colour theme applies on top of any skin.
 - **Themes:** `THEMES = {red, wrb, ice, matrix, gold, neon, pink, mono}`, each `{name, acc, tint}`.
   `applyTheme()` sets the CSS variables `--acc`, `--accglow` and `--tint` and calls `car.setTheme()`.
   Warning colours (`--red`: brake bar, slip, check engine, redline segments) deliberately stay red.
@@ -281,7 +287,15 @@ Unverified signals get an amber "?".
     else a 3/4 chase view. Dragging on the canvas switches to orbit (`onModeChange` callback).
     The camera distance scales up for narrow viewports and never gets closer than a minimum distance,
     so transitions don't pass through the car.
-  - `setQuality(bool)`, `setTheme(hex)`, `resize()`, `render()`, `wheelScreen()` (projected label positions).
+  - `setSkin(name)`: per-skin preset from `SKINS` in car3d.js: `env` (`grid` | `road` | `tunnel`, built lazily
+    into `this.envs` and scrolled in `update()`), fog range/colour, the AUTO chase camera, bloom (separate values
+    when the dense Impreza wireframe is loaded), resting tail-light brightness, particle amount. `road` =
+    synthwave: 3-lane road with accent edges and white dashes, magenta grid, wire mountains, striped sun shader
+    and a gradient sky dome (keep the sun below the bloom threshold or it hazes the whole view). `tunnel` =
+    vector rings + lane lines in the accent colour.
+  - Car finish `style: 'gloss'` (setWireOptions): the occluder shader's `uGloss` path draws an opaque
+    "car paint" body (dark base, fake sky reflection, horizon highlight band, accent rim).
+  - `setQuality(bool)`, `setTheme(hex)`, `setParticles(bool)`, `resize()`, `render()`, `wheelScreen()` (projected label positions).
   - `async loadModel()`: if `static/models/model.json` exists and is enabled, loads the .glb/.gltf with
     GLTFLoader, rotates it by `rotateY` degrees, scales it to `length` metres, centres it on the
     ground, converts every mesh to edges + the shared themed fill, and, if all four `wheels` node

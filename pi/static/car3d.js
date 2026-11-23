@@ -20,6 +20,27 @@ const MODES = {
   front: { pos: new THREE.Vector3(6.2, 1.6, 2.6),   look: new THREE.Vector3(0, 0.6, 0) },
 };
 
+// Scene presets for the UI skins (Settings > SKIN). Each sets the floor/backdrop, fog, chase camera,
+// bloom and how bright the tail lights sit. Colours that aren't the theme accent are fixed per skin.
+export const SKINS = {
+  wire: {
+    env: 'grid', fog: [9, 30], bg: null,
+    chase: { pos: [-5.6, 2.2, 2.6], look: [0.8, 0.6, 0], lean: 2 },
+    bloom: [0.85, 0.45, 0.12], bloomWire: [0.45, 0.35, 0.2], tailRest: 0.55, particles: 1,
+  },
+  synth: {   // neon road at sunset, low chase camera, glossy car
+    env: 'road', fog: [14, 75], bg: '#14042a',
+    chase: { pos: [-6.4, 1.3, 0], look: [3.0, 0.8, 0], lean: 1.2 },
+    bloom: [0.8, 0.3, 0.72], bloomWire: [0.55, 0.3, 0.72], tailRest: 1.6, particles: 0.6,
+    magenta: '#ff2fd6', sunTop: '#ffd24a', sunBot: '#ff2f9a', sky: ['#05010d', '#2a0848', '#7a1a78'],
+  },
+  crt: {     // vector-display tunnel, everything in the theme colour
+    env: 'tunnel', fog: [6, 46], bg: '#010302',
+    chase: { pos: [-6.2, 2.6, 1.4], look: [1.5, 0.7, 0], lean: 1.5 },
+    bloom: [0.6, 0.3, 0.2], bloomWire: [0.28, 0.2, 0.35], tailRest: 0.55, particles: 0,
+  },
+};
+
 function bodyShape() {
   const s = new THREE.Shape();
   s.moveTo(-2.20, 0.38);
@@ -72,6 +93,9 @@ export class Car3D {
     this.wheelR = WHEEL_R;
     this.wire = null;                       // bundled Impreza wireframe, once loaded
     this.wireOpts = { style: 'solid', glow: true, lights: true, wheels: true, glass: true };
+    this.skinName = 'wire';
+    this.skin = SKINS.wire;
+    this.envs = {};                         // floor/backdrop groups, built the first time a skin needs them
 
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -79,7 +103,7 @@ export class Car3D {
 
     const scene = this.scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0x07080a, 9, 30);
-    this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+    this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 220);
     this.camera.position.set(-5, 2.5, 4.5);
     this.lookAt = new THREE.Vector3(0, 0.6, 0);
 
@@ -114,6 +138,7 @@ export class Car3D {
 
   _fillMat(opacity = 0.06) {
     const m = new THREE.MeshBasicMaterial({ color: this.accent.clone(), transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
+    m.userData.base = opacity;
     this.fillMats.push(m);
     return m;
   }
@@ -206,8 +231,10 @@ export class Car3D {
 
   _buildGround() {
     this._makeGrid();
+    this.envs.grid = this.grid;
     // contact shadow
-    const sh = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 2.1), this._fillMat(0.05));
+    this.shadowMat = this._fillMat(0.05);
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 2.1), this.shadowMat);
     sh.rotation.x = -Math.PI / 2;
     sh.position.y = 0.003;
     this.root.add(sh);
@@ -260,8 +287,155 @@ export class Car3D {
     for (const m of this.fillMats) m.color.copy(this.accent);
     this.particles.material.color.copy(this.accent);
     if (this.wire) this.wire.occMat.uniforms.uColor.value.copy(this.accent);
-    this.scene.fog.color.set(bg);
+    this.themeBg = bg;
+    this.scene.fog.color.set(this.skin.bg || bg);
+    const gridOn = this.grid ? this.grid.visible : true;
     this._makeGrid();
+    this.envs.grid = this.grid;
+    this.grid.visible = gridOn;
+    for (const m of this.envAccentMats || []) m.color.copy(this.accent).multiplyScalar(m.userData.k || 1);
+  }
+
+  // ------------------------------------------------------------ skins: floor, backdrop, camera, bloom
+  setSkin(name) {
+    const sk = SKINS[name] || SKINS.wire;
+    this.skinName = SKINS[name] ? name : 'wire';
+    this.skin = sk;
+    if (!this.envs[sk.env]) this.envs[sk.env] = sk.env === 'road' ? this._buildRoad(sk) : this._buildTunnel(sk);
+    for (const [k, g] of Object.entries(this.envs)) g.visible = k === sk.env;
+    this.scene.fog.near = sk.fog[0]; this.scene.fog.far = sk.fog[1];
+    this.scene.fog.color.set(sk.bg || this.themeBg || '#050608');
+    this.particles.material.opacity = 0.8 * sk.particles;
+    this.particles.visible = this.particlesOn !== false && sk.particles > 0;
+    this._applyBloom();
+  }
+
+  setParticles(on) { this.particlesOn = on; this.particles.visible = on && this.skin.particles > 0; }
+
+  _applyBloom() {
+    const [st, r, th] = this.wire ? this.skin.bloomWire : this.skin.bloom;
+    this.bloom.strength = st; this.bloom.radius = r; this.bloom.threshold = th;
+  }
+
+  _accentMat(Mat, k = 1, extra = {}) {          // a material that follows the theme accent (k = brightness)
+    const m = new Mat({ color: this.accent.clone().multiplyScalar(k), ...extra });
+    m.userData.k = k;
+    (this.envAccentMats = this.envAccentMats || []).push(m);
+    return m;
+  }
+
+  // flat quads (y = 0) from [x0, x1, z0, z1] boxes, as one geometry
+  static _quads(boxes, y = 0.004) {
+    const pos = [], idx = [];
+    boxes.forEach(([x0, x1, z0, z1], i) => {
+      pos.push(x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1);
+      const o = i * 4; idx.push(o, o + 2, o + 1, o, o + 3, o + 2);
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    return g;
+  }
+
+  // Synthwave: three-lane road with glowing edges and rushing dashes, a magenta grid either side,
+  // wireframe mountains and a striped sun on the horizon (+X, ahead of the car), under a gradient sky.
+  _buildRoad(sk) {
+    const env = new THREE.Group();
+    const L0 = -40, L1 = 140, HALF = 3.5, LANE = 1.17;
+    const magenta = new THREE.Color(sk.magenta);
+    // tarmac
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(L1 - L0, HALF * 2),
+      new THREE.MeshBasicMaterial({ color: 0x05020b }));
+    road.rotation.x = -Math.PI / 2; road.position.set((L0 + L1) / 2, 0.001, 0);
+    env.add(road);
+    // edge lines (theme colour, over-bright so they bloom)
+    env.add(new THREE.Mesh(Car3D._quads([[L0, L1, HALF - 0.12, HALF], [L0, L1, -HALF, -HALF + 0.12]]),
+      this._accentMat(THREE.MeshBasicMaterial, 1.5)));
+    // lane dashes: 3 m on, 3 m off, scrolled by update()
+    const dashes = [];
+    for (let x = L0; x < L1; x += 6) for (const z of [LANE, -LANE]) dashes.push([x, x + 3, z - 0.06, z + 0.06]);
+    this.roadDash = new THREE.Mesh(Car3D._quads(dashes, 0.005), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.95, 0.95, 1.05) }));
+    env.add(this.roadDash);
+    // magenta grid beside the road, scrolled by update()
+    const gp = [];
+    for (let z = HALF + 1.2; z <= 60; z += 2.5) for (const sz of [z, -z]) gp.push(L0, 0, sz, L1, 0, sz);
+    for (let x = L0; x <= L1; x += 2.5) gp.push(x, 0, HALF + 1.2, x, 0, 60, x, 0, -HALF - 1.2, x, 0, -60);
+    const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3));
+    this.roadGrid = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: magenta.clone().multiplyScalar(0.9), transparent: true, opacity: 0.55 }));
+    env.add(this.roadGrid);
+    // mountains: a jagged ridge across the horizon, dark fill + glowing outline
+    const ridge = [], N = 46, MX = 92;
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i <= N; i++) {
+      const z = -150 + i * 300 / N, centre = Math.abs(z) < 26;     // keep a gap so the sun shows over the road
+      ridge.push([z, centre ? 1 + rnd() * 2 : 5 + rnd() * 14]);
+    }
+    const mp = [], mi = [], lp = [];
+    ridge.forEach(([z, h], i) => {
+      mp.push(MX, -1, z, MX, h, z);
+      if (i) { const o = (i - 1) * 2; mi.push(o, o + 2, o + 1, o + 1, o + 2, o + 3);
+        const [pz, ph] = ridge[i - 1]; lp.push(MX - 0.1, ph, pz, MX - 0.1, h, z); }
+      if (i % 2) lp.push(MX - 0.1, h, z, MX - 0.1, 0, z + (rnd() - 0.5) * 8);    // a few ridge struts
+    });
+    const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.Float32BufferAttribute(mp, 3)); mg.setIndex(mi);
+    env.add(new THREE.Mesh(mg, new THREE.MeshBasicMaterial({ color: 0x0a0216, fog: false, side: THREE.DoubleSide })));
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+    env.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: magenta, fog: false, transparent: true, opacity: 0.8 })));
+    // sun: gradient disc with the classic gaps cut into its lower half
+    const sun = new THREE.Mesh(new THREE.PlaneGeometry(56, 56), new THREE.ShaderMaterial({
+      uniforms: { uTop: { value: new THREE.Color(sk.sunTop) }, uBot: { value: new THREE.Color(sk.sunBot) } },
+      vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform vec3 uTop; uniform vec3 uBot; varying vec2 vU;
+        void main(){ vec2 c = vU - 0.5; float d = length(c);
+          float disc = smoothstep(0.5, 0.48, d);
+          float y = vU.y;                                     // 0 bottom .. 1 top
+          float gap = y < 0.55 ? step(0.5 + 0.45 * (0.55 - y) / 0.55, fract(y * 14.0)) : 0.0;
+          vec3 col = mix(uBot, uTop, smoothstep(0.1, 0.9, y)) * 0.72;   // under the bloom threshold, or it hazes the whole view
+          float a = disc * (1.0 - gap) + smoothstep(0.58, 0.49, d) * 0.15;    // + soft halo
+          if (a < 0.004) discard;                             // don't touch the sky outside the disc
+          gl_FragColor = vec4(col, a); }`,
+      transparent: true, depthWrite: false, fog: false,
+    }));
+    sun.rotation.y = -Math.PI / 2; sun.position.set(MX + 20, 9, 0); sun.renderOrder = -5;
+    env.add(sun);
+    // sky dome: dark at the top, magenta glow at the horizon
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(180, 32, 16), new THREE.ShaderMaterial({
+      uniforms: { uA: { value: new THREE.Color(sk.sky[0]) }, uB: { value: new THREE.Color(sk.sky[1]) }, uC: { value: new THREE.Color(sk.sky[2]) } },
+      vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform vec3 uA; uniform vec3 uB; uniform vec3 uC; varying vec3 vP;
+        void main(){ float h = vP.y; vec3 col = h > 0.0 ? mix(uB, uA, smoothstep(0.0, 0.45, h)) : uB * 0.6;
+          col += uC * exp(-abs(h) * 22.0) * 0.9;              // bright line at the horizon
+          gl_FragColor = vec4(col, 1.0); }`,
+      side: THREE.BackSide, depthWrite: false, fog: false,
+    }));
+    sky.renderOrder = -10;
+    env.add(sky);
+    this.scene.add(env);
+    return env;
+  }
+
+  // Retro CRT: a vector-graphics tunnel of rings rushing past, with road lines, all in the theme colour.
+  _buildTunnel() {
+    const env = new THREE.Group();
+    const prof = [[-4, 0], [-4, 3.2], [-2.4, 5], [2.4, 5], [4, 3.2], [4, 0]];   // [z, y] cross-section
+    const rp = [];
+    for (let x = -24; x <= 90; x += 4) {
+      for (let i = 1; i < prof.length; i++) rp.push(x, prof[i - 1][1], prof[i - 1][0], x, prof[i][1], prof[i][0]);
+    }
+    const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rp, 3));
+    this.tunnelRings = new THREE.LineSegments(rg, this._accentMat(THREE.LineBasicMaterial, 1.4, { transparent: true, opacity: 0.9 }));
+    env.add(this.tunnelRings);
+    const lp = [];
+    for (const [z, y] of prof) lp.push(-24, y, z, 90, y, z);                        // long edges
+    for (const z of [-1.4, 1.4]) lp.push(-24, 0.002, z, 90, 0.002, z);               // lane edges
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+    env.add(new THREE.LineSegments(lg, this._accentMat(THREE.LineBasicMaterial, 0.8, { transparent: true, opacity: 0.7 })));
+    const dashes = [];
+    for (let x = -24; x < 90; x += 4) dashes.push([x, x + 1.6, -0.05, 0.05]);
+    this.tunnelDash = new THREE.Mesh(Car3D._quads(dashes, 0.004), this._accentMat(THREE.MeshBasicMaterial, 2));
+    env.add(this.tunnelDash);
+    this.scene.add(env);
+    return env;
   }
 
   // ------------------------------------------------------------ bundled Impreza wireframe
@@ -305,13 +479,27 @@ export class Car3D {
       headMat: new THREE.LineBasicMaterial({ color: this.accent.clone(), transparent: true }),
       tailMat: new THREE.LineBasicMaterial({ color: new THREE.Color(0.55, 0.04, 0.07), transparent: true }),
       occMat: new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: this.accent.clone() }, uGlow: { value: 1 }, uBase: { value: 0 } },
+        uniforms: { uColor: { value: this.accent.clone() }, uGlow: { value: 1 }, uBase: { value: 0 },
+          uGloss: { value: 0 }, uBody: { value: new THREE.Color(0x0b0716) }, uSky: { value: new THREE.Color(0xff2fd6) } },
         vertexShader: `varying vec3 vN; varying vec3 vV;
           void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0);
             vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
-        fragmentShader: `uniform vec3 uColor; uniform float uGlow; uniform float uBase; varying vec3 vN; varying vec3 vV;
-          void main(){ float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 3.0);
-            gl_FragColor = vec4(uColor * (0.5 + f), uBase + f * 0.55 * uGlow); }`,
+        // uGloss = 1: opaque "car paint": dark body, fake sky reflection, a horizon highlight band and an
+        // accent-coloured rim. Otherwise a see-through fresnel glow used by the wireframe looks.
+        fragmentShader: `uniform vec3 uColor; uniform float uGlow; uniform float uBase; uniform float uGloss;
+          uniform vec3 uBody; uniform vec3 uSky; varying vec3 vN; varying vec3 vV;
+          void main(){ vec3 n = normalize(vN), v = normalize(vV);
+            float f = pow(1.0 - abs(dot(n, v)), 3.0);
+            if (uGloss > 0.5) {
+              vec3 r = reflect(-v, n);
+              float up = smoothstep(-0.2, 0.7, r.y);
+              float band = smoothstep(0.09, 0.0, abs(r.y - 0.12));
+              vec3 col = uBody * (0.6 + 0.8 * up) + uSky * (0.22 * up + 0.5 * band) + uColor * f * (0.7 + 0.8 * uGlow)
+                       + vec3(1.0) * band * 0.18;
+              gl_FragColor = vec4(col, 1.0);
+            } else {
+              gl_FragColor = vec4(uColor * (0.5 + f), uBase + f * 0.55 * uGlow);
+            }}`,
         transparent: true, side: THREE.DoubleSide,
         polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4,
       }),
@@ -356,7 +544,7 @@ export class Car3D {
     this.builtin.visible = false;
     this.lightGroup.visible = false;
     // far more lines than the built-in car: tone the bloom down so it glows instead of smearing
-    this.bloom.strength = 0.45; this.bloom.radius = 0.35; this.bloom.threshold = 0.2;
+    this._applyBloom();
     this.setWireOptions(this.wireOpts);
     this.modelInfo = `Impreza sedan · ${H.detail} detail · ${Math.round(W.lines / 1000)}k lines`;
     return true;
@@ -379,18 +567,25 @@ export class Car3D {
     this.wire = null;
   }
 
-  // opts: { style: 'solid'|'xray', glow, lights, wheels, glass }
+  // opts: { style: 'solid'|'xray'|'gloss', glow, lights, wheels, glass }
   setWireOptions(opts) {
     Object.assign(this.wireOpts, opts);
+    const o = this.wireOpts, gloss = o.style === 'gloss';
+    for (const m of this.fillMats) {                   // built-in car: a gloss body is a near-opaque fill
+      if (m === this.shadowMat) continue;
+      m.opacity = gloss ? Math.max(0.5, m.userData.base * 8) : m.userData.base;
+    }
     const W = this.wire;
     if (!W) return;
-    const o = this.wireOpts, solid = o.style !== 'xray';
+    const solid = o.style !== 'xray';
     W.occMat.depthWrite = solid;                       // solid: body hides the lines behind it
+    W.occMat.transparent = !gloss;
+    W.occMat.uniforms.uGloss.value = gloss ? 1 : 0;
     W.occMat.uniforms.uBase.value = solid ? 0 : 0.035;  // x-ray: faint see-through fill
     W.occMat.uniforms.uGlow.value = o.glow ? (solid ? 1 : 0.6) : 0;
     W.occMat.needsUpdate = true;
-    W.lineMat.opacity = solid ? 0.95 : 0.6;
-    W.glassMat.opacity = solid ? 0.6 : 0.4;
+    W.lineMat.opacity = gloss ? 0.45 : solid ? 0.95 : 0.6;   // gloss: panel lines are just accents
+    W.glassMat.opacity = gloss ? 0.75 : solid ? 0.6 : 0.4;
     const show = (name, on) => { if (W.parts[name]) W.parts[name].visible = on; };
     show('glass', o.glass);
     for (const n of ['head', 'tail']) {             // keep the solid lamp shells so the body stays closed
@@ -514,18 +709,22 @@ export class Car3D {
 
     // lights
     const brakeOn = (s.brake || 0) > 3 || s.brakeSw;
-    for (const m of this.brakeL) m.material.color.setRGB(brakeOn ? 3.2 : 0.35, brakeOn ? 0.2 : 0.02, brakeOn ? 0.3 : 0.04);
+    const tr0 = this.skin.tailRest * 0.64;
+    for (const m of this.brakeL) m.material.color.setRGB(brakeOn ? 3.2 : tr0, brakeOn ? 0.2 : tr0 * 0.06, brakeOn ? 0.3 : tr0 * 0.11);
     const hl = s.highBeam ? 3.0 : s.lowBeam ? 1.8 : 0.25;
     for (const m of this.headL) m.material.color.setRGB(hl, hl, hl * 0.95);
     for (const m of this.revL) m.material.color.setRGB(s.reverse ? 2.5 : 0.1, s.reverse ? 2.5 : 0.1, s.reverse ? 2.5 : 0.1);
     if (this.wire) {   // the model's own lamp lines: tail lights glow on brake, headlights with the beams
-      this.wire.tailMat.color.setRGB(brakeOn ? 3.2 : 0.55, brakeOn ? 0.2 : 0.04, brakeOn ? 0.3 : 0.07);
+      const tr = this.skin.tailRest;              // some skins keep the tail lights lit, like at night
+      this.wire.tailMat.color.setRGB(brakeOn ? 3.6 : tr, brakeOn ? 0.2 : tr * 0.07, brakeOn ? 0.3 : tr * 0.13);
       if (s.highBeam || s.lowBeam) this.wire.headMat.color.setRGB(hl, hl, hl * 0.95);
       else this.wire.headMat.color.copy(this.accent);
     }
 
     // ground + particles scroll past
     this.grid.position.x = -(this.dist % 1);
+    if (this.roadDash) { this.roadDash.position.x = -(this.dist % 6); this.roadGrid.position.x = -(this.dist % 2.5); }
+    if (this.tunnelRings) { this.tunnelRings.position.x = -(this.dist % 4); this.tunnelDash.position.x = -(this.dist % 4); }
     const p = this.particles.geometry.attributes.position;
     for (let i = 0; i < p.count; i++) {
       let x = p.getX(i) - v * dt - 0.05 * dt;
@@ -547,8 +746,9 @@ export class Car3D {
         Math.sin(this.orbitEl) * r + 0.4, Math.sin(this.orbitAz) * Math.cos(this.orbitEl) * r);
       look = new THREE.Vector3(0, 0.6, 0);
     } else if (mode === 'chase3q') {
-      pos = new THREE.Vector3(-5.6, 2.2, 2.6 - (s.latG || 0) * 2);
-      look = new THREE.Vector3(0.8, 0.6, 0);
+      const c = this.skin.chase;
+      pos = new THREE.Vector3(c.pos[0], c.pos[1], c.pos[2] - (s.latG || 0) * c.lean);
+      look = new THREE.Vector3(...c.look);
     } else {
       pos = MODES[mode].pos; look = MODES[mode].look;
     }

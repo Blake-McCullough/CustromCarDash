@@ -1,0 +1,62 @@
+/* RETRO CRT skin: a monochrome phosphor terminal in the theme colour (MATRIX = green phosphor,
+   GOLD = amber). Square frames, monospace everything, glowing text, scanlines baked into the panel
+   backgrounds (no full-screen overlay, so the Pi doesn't re-composite the 3D view every frame).
+   Warning colours (--red) deliberately stay red. */
+body[data-skin="crt"] {
+  --fg: color-mix(in srgb, var(--acc) 72%, #fff);
+  --dim: color-mix(in srgb, var(--acc) 52%, #0a0a0a);
+  --track: color-mix(in srgb, var(--acc) 9%, #000);
+  --ui: var(--mono);
+  --scan: repeating-linear-gradient(0deg, rgba(0, 0, 0, .38) 0 1px, transparent 1px 3px);
+  font-family: var(--mono);
+  background: radial-gradient(ellipse 80% 70% at 50% 50%, color-mix(in srgb, var(--acc) 7%, #000), #000 80%);
+}
+body[data-skin="crt"] * { text-shadow: 0 0 6px color-mix(in srgb, var(--acc) 55%, transparent); }
+body[data-skin="crt"] .card {
+  background: var(--scan), color-mix(in srgb, var(--acc) 3%, #010201);
+  border: 1px solid color-mix(in srgb, var(--acc) 45%, transparent); border-radius: 0;
+  box-shadow: inset 0 0 calc(var(--u) * 3) color-mix(in srgb, var(--acc) 12%, transparent);
+}
+body[data-skin="crt"] .card::before {   /* terminal-style corner marks */
+  left: -1px; top: -1px; right: auto; width: calc(var(--u) * 1.6); height: calc(var(--u) * 1.6); opacity: 1;
+  background: none; border-left: 2px solid var(--acc); border-top: 2px solid var(--acc);
+}
+body[data-skin="crt"] .stage { background: #000; }
+body[data-skin="crt"] .stage::after {   /* scanlines + curved-glass vignette over the 3D view */
+  background: var(--scan), radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, .65) 100%);
+  box-shadow: inset 0 0 calc(var(--u) * 5) rgba(0, 0, 0, .9);
+}
+body[data-skin="crt"] .label::before { content: ">"; color: var(--acc); }
+body[data-skin="crt"] .speed { background: none; color: var(--fg); filter: none;
+  text-shadow: 0 0 calc(var(--u) * 1.6) var(--accglow), 0 0 2px #fff; letter-spacing: -.02em; }
+body[data-skin="crt"] #gear { color: var(--fg); }
+body[data-skin="crt"] .gearbox { border-radius: 0; border-width: 1px; background: none;
+  box-shadow: inset 0 0 calc(var(--u) * 2) color-mix(in srgb, var(--acc) 20%, transparent); }
+body[data-skin="crt"] .brand b { font-style: normal; }
+body[data-skin="crt"] .brand::after { content: "_"; color: var(--acc); animation: blink 1s steps(1) infinite; }
+
+/* blocky segments and bars, like a character display */
+body[data-skin="crt"] .segs { transform: none; gap: 2px; }
+body[data-skin="crt"] .segs i, body[data-skin="crt"] .segs i:nth-child(5n) { background: var(--track); border-radius: 0; }
+body[data-skin="crt"] .segs i.on { background: var(--acc); box-shadow: 0 0 6px var(--accglow); }
+body[data-skin="crt"] .segs i.on.w { background: color-mix(in srgb, var(--acc) 50%, #fff); }
+body[data-skin="crt"] .bar { border-radius: 0; box-shadow: none; border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent); }
+body[data-skin="crt"] .bar > i { border-radius: 0; background: var(--acc);
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 7px); mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 7px); }
+body[data-skin="crt"] .bar.red > i { background: var(--red); }
+
+/* square buttons; selected = inverse video */
+body[data-skin="crt"] button, body[data-skin="crt"] .chip, body[data-skin="crt"] .pill, body[data-skin="crt"] .seg2,
+body[data-skin="crt"] .cams, body[data-skin="crt"] .wl, body[data-skin="crt"] .etile, body[data-skin="crt"] .vrow,
+body[data-skin="crt"] .skins i, body[data-skin="crt"] .nocan { border-radius: 0 !important; }
+body[data-skin="crt"] nav > button:not(.cog), body[data-skin="crt"] nav button.cog {
+  background: #000; border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); color: var(--dim); }
+body[data-skin="crt"] nav > button.on:not(.cog), body[data-skin="crt"] nav button.cog.on,
+body[data-skin="crt"] .seg2 button.on, body[data-skin="crt"] .cams button.on, body[data-skin="crt"] .chip.on:not(.bad):not(.warn) {
+  background: var(--acc) !important; border-color: var(--acc) !important; color: #000 !important; text-shadow: none; box-shadow: 0 0 10px var(--accglow); }
+body[data-skin="crt"] #c-low.on, body[data-skin="crt"] #c-high.on { background: var(--acc); border-color: var(--acc); }
+body[data-skin="crt"] .etile { background: var(--scan), #010201; border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
+body[data-skin="crt"] header::after { background: color-mix(in srgb, var(--acc) 50%, transparent); }
+body[data-skin="crt"] td.id, body[data-skin="crt"] td.sig { color: var(--fg); }
+body[data-skin="crt"] .byte.hot { background: var(--acc); color: #000; text-shadow: none; }
+body[data-skin="crt"] #off { background: radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) 8%, #000), #000 70%); }

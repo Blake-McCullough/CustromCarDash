@@ -168,6 +168,25 @@ for (const [k, t] of Object.entries(THEMES)) {
   $('tgrid').appendChild(b);
 }
 
+// ---------------------------------------------------------------- skins
+// A skin restyles the whole dash (body[data-skin] → static/skins/<skin>.css) and the 3D scene
+// (Car3D.setSkin: floor, backdrop, fog, chase camera, bloom). The colour theme still applies on top.
+const SKIN_STYLE = { wire: 'solid', synth: 'gloss', crt: 'xray' };     // car finish each skin starts with
+let skin = store.get('skin', 'wire');
+if (!SKIN_STYLE[skin]) skin = 'wire';
+function applySkin(key, user) {
+  skin = key;
+  document.body.dataset.skin = key;
+  car.setSkin(key);
+  if (user) {
+    store.set('skin', key);
+    setCar('style', SKIN_STYLE[key]);           // pick the matching car finish; still changeable under CAR
+    car.setMode('auto'); selectCam('auto');     // show the skin's own chase camera
+  }
+  document.querySelectorAll('#skins button').forEach(b => b.classList.toggle('on', b.dataset.v === key));
+}
+document.querySelectorAll('#skins button').forEach(b => { b.onclick = () => applySkin(b.dataset.v, true); });
+
 let hq = store.get('fx', true);
 function applyFx(save) { car.setQuality(hq); if (save) store.set('fx', hq); renderSettings(); }
 
@@ -231,7 +250,7 @@ function renderSettings() {
   seg('o-fx', hq, v => { hq = v; applyFx(true); });
   seg('o-autofx', AUTO_FX, v => { AUTO_FX = v; store.set('autofx', v); renderSettings(); });
   const parts = store.get('particles', true);
-  car.particles.visible = parts;
+  car.setParticles(parts);
   seg('o-particles', parts, v => { store.set('particles', v); renderSettings(); });
   seg('o-cursor', showCursor, v => { showCursor = v; applyCursor(true); renderSettings(); });
   // car
@@ -828,7 +847,7 @@ function renderEngine() {
     const b = el.querySelector('b');
     if (b.firstChild.textContent !== txt) b.firstChild.textContent = txt;
     el.querySelector('.bar > i').style.width = v == null ? '0%' : (clamp((v - lo) / (hi - lo), 0, 1) * 100).toFixed(1) + '%';
-    el.querySelector('.label').classList.toggle('unv', !fromObd && meta[k] && !meta[k].verified);
+    el.querySelector('.label').classList.toggle('unv', !!(!fromObd && meta[k] && !meta[k].verified));   // must be a real boolean: toggle(c, undefined) flips every frame
   }
 }
 
@@ -859,6 +878,7 @@ window.addEventListener('unhandledrejection', e => noteError('promise', e.reason
 function car3dFail(e) { noteError('3d', e); pause3d('error: ' + (e && e.message || e)); }
 function pause3d(why) {
   if (car3dState !== 'on') return;
+  if (new URLSearchParams(location.search).has('keepfx')) return;   // testing: never drop/pause the 3D
   // first try the cheapest settings once, then give up on 3D for this session
   if (hq || (CAR.model === 'impreza' && CAR.detail === 'high')) {
     hq = false; applyFx(false);
@@ -922,6 +942,7 @@ function loop(t) {
   }
   requestAnimationFrame(loop);
 }
+applySkin(skin, false);
 applyTheme(theme);
 loadCar();
 lastMsg = performance.now();

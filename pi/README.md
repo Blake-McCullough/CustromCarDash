@@ -118,6 +118,12 @@ re-check the crystal setting. Only then start the engine.
 To go back to listen-only: `sudo ./setup_pi.sh && sudo reboot`.
 Try it without the car: `python3 dash_server.py --demo --obd` (a simulated engine computer answers).
 
+## Skins and colours
+**Settings → SKIN** changes the whole look, including the 3D scene: **Neon Wire** (wireframe car on a grid),
+**Synthwave** (neon road at sunset, glossy car, low chase camera; try the ICE or NEON colour) and
+**Retro CRT** (green-screen terminal and a vector tunnel; MATRIX = green phosphor, GOLD = amber).
+**COLOUR** works on top of any skin.
+
 ## Vehicle profiles (other cars)
 Each car's CAN decodes live in their own file in `pi/vehicles/`, along with its defaults (name,
 CAN bitrate, redline, weight, gear ratios, 3D model). Pick one in **Settings → VEHICLE**. The dash

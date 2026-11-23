@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>Car Dash</title>
 <link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/skins/synth.css">
+<link rel="stylesheet" href="/static/skins/crt.css">
 <script type="importmap">
 { "imports": { "three": "/static/vendor/three.module.js", "three/addons/": "/static/vendor/addons/" } }
 </script>
@@ -117,14 +119,22 @@
   <!-- ============ SETTINGS ============ -->
   <section id="v-settings" class="view">
     <div class="scol">
+      <div class="card sblock">
+        <div class="label">SKIN <small class="dim">· look of the whole dash + 3D scene</small></div>
+        <div class="skins" id="skins">
+          <button data-v="wire"><i class="sk-wire"></i><b>NEON WIRE</b><span>grid · wireframe</span></button>
+          <button data-v="synth"><i class="sk-synth"></i><b>SYNTHWAVE</b><span>neon road · sunset</span></button>
+          <button data-v="crt"><i class="sk-crt"></i><b>RETRO CRT</b><span>vector tunnel · scanlines</span></button>
+        </div>
+      </div>
       <div class="card sblock theme">
-        <div class="label">THEME</div>
+        <div class="label">COLOUR</div>
         <div class="tgrid2" id="tgrid"></div>
       </div>
       <div class="card sblock carcard">
         <div class="label">CAR</div>
         <div class="opt"><span>Model</span><div class="seg2" id="o-model"><button data-v="impreza">IMPREZA</button><button data-v="custom">CUSTOM</button><button data-v="basic">BASIC</button></div></div>
-        <div class="opt caronly"><span>Style</span><div class="seg2" id="o-style"><button data-v="solid">SOLID</button><button data-v="xray">X-RAY</button></div></div>
+        <div class="opt caronly"><span>Style</span><div class="seg2" id="o-style"><button data-v="solid">SOLID</button><button data-v="gloss">GLOSS</button><button data-v="xray">X-RAY</button></div></div>
         <div class="opt caronly"><span>Detail</span><div class="seg2" id="o-detail"><button data-v="high">HIGH</button><button data-v="low">LOW</button></div></div>
         <div class="opt caronly"><span>Edge glow</span><div class="seg2" id="o-glow"><button data-v="1">ON</button><button data-v="0">OFF</button></div></div>
         <div class="opt caronly"><span>Show</span><div class="seg2 multi"><button id="o-lights">LIGHTS</button><button id="o-wheels">WHEELS</button><button id="o-glass">GLASS</button></div></div>
