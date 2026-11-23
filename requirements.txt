@@ -1,0 +1,5 @@
+# Python packages for the dash backend (pi/dash_server.py).
+# PC / Windows (demo mode):   py -m pip install -r requirements.txt
+# The Raspberry Pi doesn't need this: setup_pi.sh installs the same packages with apt.
+aiohttp>=3.8       # web server + WebSocket (needed for everything, including --demo)
+python-can>=4.0    # reads the CAN bus (live mode only; --demo works without it)

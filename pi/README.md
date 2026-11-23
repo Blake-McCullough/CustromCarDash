@@ -188,7 +188,7 @@ to rebuild the bundled files from an OBJ.
 
 ## Preview on your Windows PC (no Pi needed)
 1. Install Python from python.org (tick **Add python.exe to PATH**).
-2. In a terminal: `pip install aiohttp`
+2. In a terminal, from the repo folder: `py -m pip install -r requirements.txt`
 3. In the `pi` folder: `python dash_server.py --demo --cursor` (`--cursor` shows the mouse pointer,
    which is hidden by default for the touch screen)
 4. Open **http://localhost:8080** in Chrome. Press **F11** for full screen.

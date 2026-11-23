@@ -59,6 +59,7 @@ user's explicit confirmation.
 CustromCarDash/
 ├── AGENTS.md                 ← this file
 ├── README.md                 ← human overview + safety rules
+├── requirements.txt          ← pip packages for PC/demo use (aiohttp, python-can); the Pi uses apt
 ├── .gitattributes            ← *.sh and *.py forced to LF (they run on the Pi)
 ├── .gitignore                ← ignores pi/settings.json and pi/logs/
 ├── docs/
@@ -332,7 +333,7 @@ and `Z`, and refuses `t/T/r/R`. On the Pi: `slcand -o -c -s6 -S 921600 /dev/ttyU
 ---
 
 ## 7. Development workflow
-- **On Windows/PC, no hardware:** `pip install aiohttp`, then in `pi/`: `py dash_server.py --demo --cursor`,
+- **On Windows/PC, no hardware:** `py -m pip install -r requirements.txt` (repo root), then in `pi/`: `py dash_server.py --demo --cursor`,
   and open `http://localhost:8080`. A refresh picks up frontend edits. Restart the server after editing
   a vehicle profile or `dash_server.py`.
 - **Watch out:** the user edits in an IDE. If an AI tool writes a file while it's open in the editor,
